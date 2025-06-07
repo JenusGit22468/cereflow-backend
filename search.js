@@ -548,24 +548,6 @@ EXAMPLES:
 - "Emergency Department" = HIGH (emergency care, can treat stroke)
 
 Return JSON with detailed analysis for pattern matching:`;
-{
-  "facilities": [
-    {
-      "medical_relevance": "High/Medium/Low",
-      "language_support": "Confirmed/Likely/Unlikely/Unknown",
-      "language_note": "Brief note about language services",
-      "service_match": "Excellent/Good/Fair/Poor",
-      "specialty_note": "Brief stroke care capabilities note",
-      "facility_type": "hospital/urgent_care/clinic/specialty_center/other"
-    }
-  ],
-  "patterns": {
-    "hospital_language_support": "Confirmed/Likely/Unlikely",
-    "urgent_care_language_support": "Confirmed/Likely/Unlikely", 
-    "clinic_language_support": "Confirmed/Likely/Unlikely",
-    "general_language_note": "General note about language support in this area"
-  }
-}`;
 
   let aiAnalysis = null;
   
