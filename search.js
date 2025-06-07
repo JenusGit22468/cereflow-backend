@@ -544,7 +544,7 @@ MANDATORY RULES - NO EXCEPTIONS:
 EXAMPLES:
 - "Nepal Eye Hospital" = LOW (eye specialty, cannot treat stroke)
 - "Dental Care Hospital" = LOW (dental specialty, cannot treat stroke)
-- "Civil Service Hospital" = HIGH (general hospital, can treat stroke)
+- "Civil Service Hospital" = HIGH (general hospital, can treat strokes)
 - "Emergency Department" = HIGH (emergency care, can treat stroke)
 
 Return JSON with detailed analysis for pattern matching:`;
