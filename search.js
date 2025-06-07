@@ -617,12 +617,15 @@ Return JSON with detailed analysis for pattern matching:`;
 
   // Function to apply AI insights using patterns
   function applyAIInsights(facility, index) {
-
-  // MANUAL OVERRIDE - Force specialty hospitals to LOW regardless of ChatGPT
+    console.log(`🔍 Checking facility: ${facility.displayName?.text}`);
+    
+    // MANUAL OVERRIDE - Force specialty hospitals to LOW regardless of ChatGPT
     const name = (facility.displayName?.text || '').toLowerCase();
+    console.log(`🔍 Name lowercased: ${name}`);
     
     if (name.includes('eye') || name.includes('dental') || name.includes('skin') || 
         name.includes('ent') || name.includes('dermat') || name.includes('ophthalm')) {
+      console.log(`🚫 MANUAL OVERRIDE TRIGGERED for: ${name}`);
       return {
         medical_relevance: 'Low',
         language_support: 'Unknown',
@@ -632,6 +635,10 @@ Return JSON with detailed analysis for pattern matching:`;
         facility_type: 'specialty_hospital'
       };
     }
+    
+    console.log(`✅ No override needed for: ${name}`);
+    // ... rest of your existing function
+  }
 
     // If we have direct AI analysis for this facility, use it
     if (aiAnalysis && aiAnalysis.facilities && aiAnalysis.facilities[index]) {
