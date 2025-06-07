@@ -482,6 +482,9 @@ async function getRealFacilities(location, needTypes) {
 
 // Enhanced ChatGPT analysis with smart insights application for pagination
 async function enhanceWithChatGPT(realFacilities, location, needTypes, language, detectedLocalLanguage) {
+  // Add missing variables
+  const languageContext = language === 'local' ? detectedLocalLanguage : language;
+  const needsTranslation = languageContext !== 'en';
   if (realFacilities.length === 0) {
     return {
       success: false,
@@ -513,7 +516,7 @@ FACILITIES:
 ${facilityDataForAI.map((f, i) => `${i + 1}. ${f.name} - ${f.address} - Types: ${f.types.join(', ')}`).join('\n')}
 
 PATIENT NEEDS: ${needTypes.join(', ')}
-LANGUAGE: ${languageContext}${needsTranslation ? ' (non-English)' : ''}
+LANGUAGE: ${language}${language !== 'en' ? ' (non-English)' : ''}
 
 STROKE EMERGENCY MEDICAL RELEVANCE (BE EXTREMELY STRICT):
 
