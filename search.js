@@ -550,6 +550,15 @@ EXAMPLES:
 - "Civil Service Hospital" = HIGH (general hospital, can treat strokes)
 - "Emergency Department" = HIGH (emergency care, can treat stroke)
 
+MANDATORY OVERRIDES - THESE MUST BE LOW:
+- "Nepal Eye Hospital" = LOW (ophthalmology specialty, CANNOT treat stroke)
+- "ASG Eye Hospital" = LOW (ophthalmology specialty, CANNOT treat stroke)  
+- "Central Health care Dental" = LOW (dental specialty, CANNOT treat stroke)
+- "Dental Care Hospital" = LOW (dental specialty, CANNOT treat stroke)
+- "Nepal Skin Hospital" = LOW (dermatology specialty, CANNOT treat stroke)
+
+CRITICAL RULE: Any hospital with "Eye", "Dental", "Skin", "ENT" in the name MUST be rated LOW for stroke emergencies, regardless of being called a "hospital".
+
 Return JSON with detailed analysis for pattern matching:`;
 
   let aiAnalysis = null;
