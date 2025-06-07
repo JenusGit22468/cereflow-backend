@@ -505,10 +505,7 @@ async function enhanceWithChatGPT(realFacilities, location, needTypes, language,
   }));
 
   // Build language assessment context
-  const languageContext = language === 'local' ? detectedLocalLanguage : language;
-  const needsTranslation = languageContext !== 'en';
-
-  const prompt = `You are a medical expert. Analyze these facilities for STROKE EMERGENCY care in ${location}.
+  const prompt = `You are a medical emergency expert. Analyze these facilities for STROKE EMERGENCY care in ${location}.
 
 CRITICAL: You must be EXTREMELY strict about medical relevance for stroke care.
 
@@ -518,20 +515,39 @@ ${facilityDataForAI.map((f, i) => `${i + 1}. ${f.name} - ${f.address} - Types: $
 PATIENT NEEDS: ${needTypes.join(', ')}
 LANGUAGE: ${languageContext}${needsTranslation ? ' (non-English)' : ''}
 
-STRICT MEDICAL RELEVANCE RULES:
-- HIGH: ONLY general hospitals, emergency departments, trauma centers, stroke centers
-- MEDIUM: Urgent care centers  
-- LOW: Eye hospitals, dental hospitals, skin hospitals, ENT hospitals, specialty clinics
+STROKE EMERGENCY MEDICAL RELEVANCE (BE EXTREMELY STRICT):
 
-MANDATORY: These facilities MUST get LOW relevance:
-- ANY hospital with "Eye" in name = LOW
-- ANY hospital with "Dental" in name = LOW  
-- ANY hospital with "Skin" in name = LOW
-- ANY hospital with "ENT" in name = LOW
+HIGH RELEVANCE (Only these can treat stroke emergencies):
+- General hospitals with emergency departments
+- Trauma centers  
+- Stroke centers
+- Major medical centers with neurology
 
-These facilities CANNOT treat stroke emergencies and must be rated LOW.
+MEDIUM RELEVANCE:
+- Urgent care centers (can stabilize but limited stroke care)
 
-Return JSON with detailed analysis for pattern matching:
+LOW RELEVANCE (CANNOT treat stroke emergencies):
+- Eye hospitals (ophthalmology only)
+- Dental hospitals (dentistry only) 
+- Skin hospitals (dermatology only)
+- ENT hospitals (ear/nose/throat only)
+- Specialty clinics
+- Diagnostic centers
+
+MANDATORY RULES - NO EXCEPTIONS:
+- If hospital name contains "Eye" → MUST be LOW relevance
+- If hospital name contains "Dental" → MUST be LOW relevance  
+- If hospital name contains "Skin" → MUST be LOW relevance
+- If hospital name contains "ENT" → MUST be LOW relevance
+- If hospital name contains "Dermat" → MUST be LOW relevance
+
+EXAMPLES:
+- "Nepal Eye Hospital" = LOW (eye specialty, cannot treat stroke)
+- "Dental Care Hospital" = LOW (dental specialty, cannot treat stroke)
+- "Civil Service Hospital" = HIGH (general hospital, can treat stroke)
+- "Emergency Department" = HIGH (emergency care, can treat stroke)
+
+Return JSON with detailed analysis for pattern matching:`;
 {
   "facilities": [
     {
