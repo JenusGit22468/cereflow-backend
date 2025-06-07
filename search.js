@@ -77,6 +77,7 @@ function getCountryFromGeocodingResult(result) {
 function getLocalLanguage(countryCode) {
   const languageMap = {
     'US': 'en', 'CA': 'en', 'GB': 'en', 'AU': 'en', 'NZ': 'en',
+     'NP': 'ne',
     'MX': 'es', 'ES': 'es', 'AR': 'es', 'CO': 'es', 'PE': 'es',
     'FR': 'fr', 'BE': 'fr', 'CH': 'fr',
     'DE': 'de', 'AT': 'de',
@@ -427,9 +428,19 @@ async function getRealFacilities(location, needTypes) {
         const bIsStrokeCenter = bName.includes('stroke') ? 10 : 0;
         
         // Hospitals get high priority
-        const aIsHospital = (aName.includes('hospital') || aName.includes('medical center')) && !aName.includes('urgent') ? 8 : 0;
-        const bIsHospital = (bName.includes('hospital') || bName.includes('medical center')) && !bName.includes('urgent') ? 8 : 0;
-        
+        const aIsHospital = (aName.includes('hospital') || aName.includes('medical center')) && 
+                   !aName.includes('urgent') && 
+                   !aName.includes('eye') && 
+                   !aName.includes('dental') && 
+                   !aName.includes('skin') &&
+                  !aName.includes('ent') ? 8 : 0;
+        const bIsHospital = (bName.includes('hospital') || bName.includes('medical center')) && 
+                   !bName.includes('urgent') && 
+                   !bName.includes('eye') && 
+                   !bName.includes('dental') && 
+                   !bName.includes('skin') && 
+                   !bName.includes('ent') ? 8 : 0;
+
         // Emergency departments get medium-high priority
         const aIsEmergency = aName.includes('emergency') && !aName.includes('urgent') ? 6 : 0;
         const bIsEmergency = bName.includes('emergency') && !bName.includes('urgent') ? 6 : 0;
@@ -648,7 +659,10 @@ Return JSON with detailed analysis for pattern matching:`;
         insights.medical_relevance = 'High';
         insights.specialty_note = 'Specialized for stroke/trauma care';
         insights.service_match = 'Excellent';
-      } else if (facilityType === 'hospital') {
+      } else if (facilityType === 'hospital' && 
+          !name.toLowerCase().includes('eye') && 
+          !name.toLowerCase().includes('dental') && 
+          !name.toLowerCase().includes('skin')) {
         insights.medical_relevance = 'High';
         insights.specialty_note = 'Hospital with emergency department';
         insights.service_match = 'Excellent';
