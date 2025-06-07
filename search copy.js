@@ -480,7 +480,7 @@ async function getRealFacilities(location, needTypes) {
   }
 }
 
-// Enhanced ChatGPT analysis with smart insights application for pagination
+// ChatGPT analysis with language support assessment
 async function enhanceWithChatGPT(realFacilities, location, needTypes, language, detectedLocalLanguage) {
   if (realFacilities.length === 0) {
     return {
@@ -490,17 +490,22 @@ async function enhanceWithChatGPT(realFacilities, location, needTypes, language,
     };
   }
 
-  // Analyze top 15 facilities with ChatGPT (to stay under token limits)
-  const maxFacilitiesForAI = 15;
-  const facilitiesForAI = realFacilities.slice(0, maxFacilitiesForAI);
+  // Limit to top 10 facilities for better analysis (these should already be filtered and sorted)
+  const maxFacilities = 10;
+  const facilitiesToAnalyze = realFacilities.slice(0, maxFacilities);
   
-  console.log(`🎯 Analyzing top ${facilitiesForAI.length} facilities with AI (from ${realFacilities.length} total)`);
+  console.log(`📋 Top facilities being analyzed:`);
+  facilitiesToAnalyze.forEach((facility, index) => {
+    console.log(`${index + 1}. ${facility.displayName?.text} - ${facility.distance?.miles || 'unknown'} miles`);
+  });
+  
+  console.log(`🎯 Analyzing top ${facilitiesToAnalyze.length} facilities (from ${realFacilities.length} total)`);
 
   // Prepare facility data for ChatGPT - minimal to reduce tokens
-  const facilityDataForAI = facilitiesForAI.map(place => ({
+  const facilityData = facilitiesToAnalyze.map(place => ({
     name: place.displayName?.text || 'Unknown',
     address: place.formattedAddress || 'Address not available',
-    types: place.types || [],
+    phone: place.internationalPhoneNumber || 'Not available',
     distance: place.distance
   }));
 
@@ -508,15 +513,21 @@ async function enhanceWithChatGPT(realFacilities, location, needTypes, language,
   const languageContext = language === 'local' ? detectedLocalLanguage : language;
   const needsTranslation = languageContext !== 'en';
 
-  const prompt = `Analyze these ${facilitiesForAI.length} medical facilities for stroke care in ${location}.
+  const prompt = `Analyze these ${facilitiesToAnalyze.length} medical facilities for stroke care in ${location}.
 
 FACILITIES:
-${facilityDataForAI.map((f, i) => `${i + 1}. ${f.name} - ${f.address} - Types: ${f.types.join(', ')}`).join('\n')}
+${facilityData.map((f, i) => `${i + 1}. ${f.name} - ${f.address}`).join('\n')}
 
-PATIENT NEEDS: ${needTypes.join(', ')}
-LANGUAGE: ${languageContext}${needsTranslation ? ' (non-English)' : ''}
+PATIENT NEEDS:
+- Services: ${needTypes.join(', ')}
+- Language: ${languageContext}${needsTranslation ? ' (non-English)' : ''}
 
-Return JSON with detailed analysis for pattern matching:
+ANALYSIS REQUIRED:
+1. Medical relevance for stroke care (High/Medium/Low)
+2. Language support assessment${needsTranslation ? ` for ${languageContext}` : ''}
+3. Service availability for requested needs
+
+Return JSON only:
 {
   "facilities": [
     {
@@ -524,20 +535,11 @@ Return JSON with detailed analysis for pattern matching:
       "language_support": "Confirmed/Likely/Unlikely/Unknown",
       "language_note": "Brief note about language services",
       "service_match": "Excellent/Good/Fair/Poor",
-      "specialty_note": "Brief stroke care capabilities note",
-      "facility_type": "hospital/urgent_care/clinic/specialty_center/other"
+      "specialty_note": "Brief note about stroke care capabilities"
     }
-  ],
-  "patterns": {
-    "hospital_language_support": "Confirmed/Likely/Unlikely",
-    "urgent_care_language_support": "Confirmed/Likely/Unlikely", 
-    "clinic_language_support": "Confirmed/Likely/Unlikely",
-    "general_language_note": "General note about language support in this area"
-  }
+  ]
 }`;
 
-  let aiAnalysis = null;
-  
   try {
     console.log('🧠 Enhancing facilities with ChatGPT medical insights...');
     
@@ -546,7 +548,7 @@ Return JSON with detailed analysis for pattern matching:
       messages: [
         {
           role: 'system',
-          content: 'You are a medical expert. Analyze facilities and provide patterns for similar facilities. Return only valid JSON.'
+          content: 'You are a medical expert specializing in stroke care. Analyze facilities for medical relevance and language support. Return only valid JSON.'
         },
         {
           role: 'user',
@@ -554,100 +556,55 @@ Return JSON with detailed analysis for pattern matching:
         }
       ],
       temperature: 0.1,
-      max_tokens: 3000,
+      max_tokens: 2000,
       response_format: { type: 'json_object' }
     });
 
-    aiAnalysis = JSON.parse(completion.choices[0].message.content);
-    console.log('✅ ChatGPT analysis completed successfully');
+    const analysis = JSON.parse(completion.choices[0].message.content);
+    
+    // Merge ChatGPT analysis with full facility data
+    const enhancedFacilities = facilitiesToAnalyze.map((facility, index) => {
+      const chatgptData = analysis.facilities?.[index] || {};
+      return {
+        name: facility.displayName?.text || 'Unknown',
+        address: facility.formattedAddress || 'Address not available',
+        phone: facility.internationalPhoneNumber || 'Not available',
+        website: facility.websiteUri || 'Not available',
+        rating: facility.rating || 'Not available',
+        userRatingCount: facility.userRatingCount || 0,
+        distance: facility.distance,
+        directions: facility.directions,
+        medical_relevance: chatgptData.medical_relevance || 'Medium',
+        language_support: chatgptData.language_support || 'Unknown',
+        language_note: chatgptData.language_note || '',
+        service_match: chatgptData.service_match || 'Good',
+        specialty_note: chatgptData.specialty_note || 'Medical facility with general services',
+        likely_services: needTypes.includes('emergency') ? ['Emergency care', 'Stroke treatment'] : 
+                        needTypes.includes('rehabilitation') ? ['Rehabilitation services', 'Therapy programs'] :
+                        ['Medical services']
+      };
+    });
+
+    console.log('✅ ChatGPT enhanced facilities with medical insights');
+    
+    return {
+      success: true,
+      facilities: enhancedFacilities,
+      total_facilities_found: realFacilities.length,
+      analyzed_count: facilitiesToAnalyze.length,
+      detected_language: detectedLocalLanguage,
+      search_language: languageContext,
+      emergency_info: {
+        local_emergency_number: "911",
+        note: "Call 911 immediately if experiencing stroke symptoms"
+      }
+    };
     
   } catch (error) {
     console.error('❌ ChatGPT error:', error.message);
-    // Continue without AI analysis
-  }
-
-  // Function to determine facility type for pattern matching
-  function getFacilityType(facility) {
-    const name = facility.displayName?.text?.toLowerCase() || '';
-    const types = facility.types || [];
-    const typesStr = types.join(' ').toLowerCase();
     
-    if (name.includes('hospital') || typesStr.includes('hospital')) return 'hospital';
-    if (name.includes('urgent care') || name.includes('urgent')) return 'urgent_care';
-    if (name.includes('clinic') || typesStr.includes('clinic')) return 'clinic';
-    if (name.includes('center') && (name.includes('stroke') || name.includes('heart') || name.includes('neuro'))) return 'specialty_center';
-    return 'other';
-  }
-
-  // Function to apply AI insights using patterns
-  function applyAIInsights(facility, index) {
-    // If we have direct AI analysis for this facility, use it
-    if (aiAnalysis && aiAnalysis.facilities && aiAnalysis.facilities[index]) {
-      return aiAnalysis.facilities[index];
-    }
-    
-    // Otherwise, apply patterns based on facility type
-    const facilityType = getFacilityType(facility);
-    const name = facility.displayName?.text || '';
-    
-    let insights = {
-      medical_relevance: 'Medium',
-      language_support: 'Unknown',
-      language_note: 'Language support not assessed',
-      service_match: 'Good',
-      specialty_note: 'Medical facility',
-      facility_type: facilityType
-    };
-    
-    // Apply AI patterns if available
-    if (aiAnalysis && aiAnalysis.patterns) {
-      const patterns = aiAnalysis.patterns;
-      
-      // Apply language support patterns
-      if (facilityType === 'hospital' && patterns.hospital_language_support) {
-        insights.language_support = patterns.hospital_language_support;
-      } else if (facilityType === 'urgent_care' && patterns.urgent_care_language_support) {
-        insights.language_support = patterns.urgent_care_language_support;
-      } else if (facilityType === 'clinic' && patterns.clinic_language_support) {
-        insights.language_support = patterns.clinic_language_support;
-      }
-      
-      if (patterns.general_language_note) {
-        insights.language_note = patterns.general_language_note;
-      }
-    }
-    
-    // Apply rule-based insights for medical relevance
-    if (needTypes.includes('emergency')) {
-      if (name.toLowerCase().includes('stroke') || name.toLowerCase().includes('trauma')) {
-        insights.medical_relevance = 'High';
-        insights.specialty_note = 'Specialized for stroke/trauma care';
-        insights.service_match = 'Excellent';
-      } else if (facilityType === 'hospital') {
-        insights.medical_relevance = 'High';
-        insights.specialty_note = 'Hospital with emergency department';
-        insights.service_match = 'Excellent';
-      } else if (facilityType === 'urgent_care') {
-        insights.medical_relevance = 'Medium';
-        insights.specialty_note = 'Urgent care facility, not specialized for stroke emergencies';
-        insights.service_match = 'Fair';
-      }
-    }
-    
-    // Default language support for English-speaking areas
-    if (insights.language_support === 'Unknown' && languageContext === 'en') {
-      insights.language_support = 'Confirmed';
-      insights.language_note = 'English is the primary language spoken';
-    }
-    
-    return insights;
-  }
-
-  // Enhance ALL facilities using AI analysis + patterns
-  const enhancedFacilities = realFacilities.map((facility, index) => {
-    const aiInsights = applyAIInsights(facility, index);
-    
-    return {
+    // Return facilities without enhancement if ChatGPT fails
+    const fallbackFacilities = facilitiesToAnalyze.map(facility => ({
       name: facility.displayName?.text || 'Unknown',
       address: facility.formattedAddress || 'Address not available',
       phone: facility.internationalPhoneNumber || 'Not available',
@@ -656,88 +613,28 @@ Return JSON with detailed analysis for pattern matching:
       userRatingCount: facility.userRatingCount || 0,
       distance: facility.distance,
       directions: facility.directions,
-      types: facility.types || [],
-      ...aiInsights,
-      likely_services: needTypes.includes('emergency') ? ['Emergency care', 'Stroke treatment'] : 
-                      needTypes.includes('rehabilitation') ? ['Rehabilitation services', 'Therapy programs'] :
-                      ['Medical services']
+      medical_relevance: 'Not analyzed',
+      language_support: 'Unknown',
+      language_note: 'Language support assessment unavailable',
+      service_match: 'Not analyzed',
+      specialty_note: 'Real facility from Google Places',
+      likely_services: ['Medical services available']
+    }));
+
+    return {
+      success: true,
+      facilities: fallbackFacilities,
+      total_facilities_found: realFacilities.length,
+      analyzed_count: facilitiesToAnalyze.length,
+      detected_language: detectedLocalLanguage,
+      search_language: languageContext,
+      emergency_info: {
+        local_emergency_number: "911",
+        note: "Call 911 immediately if experiencing stroke symptoms"
+      }
     };
-  });
-
-  console.log(`✅ Enhanced ${enhancedFacilities.length} facilities (${facilitiesForAI.length} with AI, ${enhancedFacilities.length - facilitiesForAI.length} with patterns)`);
-  
-  return {
-    success: true,
-    facilities: enhancedFacilities,
-    total_facilities_found: realFacilities.length,
-    ai_analyzed_count: facilitiesForAI.length,
-    pattern_applied_count: enhancedFacilities.length - facilitiesForAI.length,
-    detected_language: detectedLocalLanguage,
-    search_language: languageContext,
-    emergency_info: {
-      local_emergency_number: "911",
-      note: "Call 911 immediately if experiencing stroke symptoms"
-    },
-    sorting_options: {
-      available: ["relevance", "distance"],
-      default: "relevance"
-    },
-    pagination: {
-      total_results: enhancedFacilities.length,
-      results_per_page: 10,
-      total_pages: Math.ceil(enhancedFacilities.length / 10)
-    }
-  };
+  }
 }
-
-// Add sorting endpoint
-router.post('/search/sort', async (req, res) => {
-  const { facilities, sortBy } = req.body;
-  
-  if (!facilities || !Array.isArray(facilities)) {
-    return res.status(400).json({
-      success: false,
-      error: 'Invalid facilities data'
-    });
-  }
-  
-  let sortedFacilities = [...facilities];
-  
-  if (sortBy === 'distance') {
-    sortedFacilities.sort((a, b) => {
-      if (a.distance && b.distance) {
-        return a.distance.miles - b.distance.miles;
-      }
-      return 0;
-    });
-  } else if (sortBy === 'relevance') {
-    sortedFacilities.sort((a, b) => {
-      // Relevance scoring
-      const relevanceScore = {
-        'High': 3,
-        'Medium': 2, 
-        'Low': 1
-      };
-      
-      const aScore = relevanceScore[a.medical_relevance] || 1;
-      const bScore = relevanceScore[b.medical_relevance] || 1;
-      
-      if (aScore !== bScore) return bScore - aScore;
-      
-      // If relevance is equal, sort by distance
-      if (a.distance && b.distance) {
-        return a.distance.miles - b.distance.miles;
-      }
-      return 0;
-    });
-  }
-  
-  res.json({
-    success: true,
-    facilities: sortedFacilities,
-    sorted_by: sortBy
-  });
-});
 
 // Main search route
 router.post('/search', async (req, res) => {
