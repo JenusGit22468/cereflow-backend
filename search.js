@@ -508,13 +508,22 @@ async function enhanceWithChatGPT(realFacilities, location, needTypes, language,
   const languageContext = language === 'local' ? detectedLocalLanguage : language;
   const needsTranslation = languageContext !== 'en';
 
-  const prompt = `Analyze these ${facilitiesForAI.length} medical facilities for stroke care in ${location}.
+  const prompt = `You are a medical expert analyzing facilities for STROKE EMERGENCY care in ${location}.
+
+CRITICAL: Only facilities that can handle stroke emergencies should get "High" medical relevance.
 
 FACILITIES:
 ${facilityDataForAI.map((f, i) => `${i + 1}. ${f.name} - ${f.address} - Types: ${f.types.join(', ')}`).join('\n')}
 
 PATIENT NEEDS: ${needTypes.join(', ')}
 LANGUAGE: ${languageContext}${needsTranslation ? ' (non-English)' : ''}
+
+STROKE CARE ANALYSIS RULES:
+- HIGH relevance: General hospitals, emergency departments, stroke centers, trauma centers
+- MEDIUM relevance: Urgent care centers (can stabilize but not ideal for stroke)
+- LOW relevance: Specialty hospitals (dental, eye, skin, ENT) that cannot treat stroke emergencies
+
+IMPORTANT: Dental hospitals, eye hospitals, skin hospitals should get LOW relevance - they cannot treat strokes.
 
 Return JSON with detailed analysis for pattern matching:
 {
