@@ -617,6 +617,22 @@ Return JSON with detailed analysis for pattern matching:`;
 
   // Function to apply AI insights using patterns
   function applyAIInsights(facility, index) {
+
+  // MANUAL OVERRIDE - Force specialty hospitals to LOW regardless of ChatGPT
+    const name = (facility.displayName?.text || '').toLowerCase();
+    
+    if (name.includes('eye') || name.includes('dental') || name.includes('skin') || 
+        name.includes('ent') || name.includes('dermat') || name.includes('ophthalm')) {
+      return {
+        medical_relevance: 'Low',
+        language_support: 'Unknown',
+        language_note: 'Language support not assessed',
+        service_match: 'Poor',
+        specialty_note: 'Specialty hospital - not equipped for stroke emergencies',
+        facility_type: 'specialty_hospital'
+      };
+    }
+
     // If we have direct AI analysis for this facility, use it
     if (aiAnalysis && aiAnalysis.facilities && aiAnalysis.facilities[index]) {
       return aiAnalysis.facilities[index];
@@ -624,7 +640,7 @@ Return JSON with detailed analysis for pattern matching:`;
     
     // Otherwise, apply patterns based on facility type
     const facilityType = getFacilityType(facility);
-    const name = facility.displayName?.text || '';
+
     
     let insights = {
       medical_relevance: 'Medium',
