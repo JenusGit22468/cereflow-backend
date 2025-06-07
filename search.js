@@ -508,9 +508,9 @@ async function enhanceWithChatGPT(realFacilities, location, needTypes, language,
   const languageContext = language === 'local' ? detectedLocalLanguage : language;
   const needsTranslation = languageContext !== 'en';
 
-  const prompt = `You are a medical expert analyzing facilities for STROKE EMERGENCY care in ${location}.
+  const prompt = `You are a medical expert. Analyze these facilities for STROKE EMERGENCY care in ${location}.
 
-CRITICAL: Only facilities that can handle stroke emergencies should get "High" medical relevance.
+CRITICAL: You must be EXTREMELY strict about medical relevance for stroke care.
 
 FACILITIES:
 ${facilityDataForAI.map((f, i) => `${i + 1}. ${f.name} - ${f.address} - Types: ${f.types.join(', ')}`).join('\n')}
@@ -518,12 +518,18 @@ ${facilityDataForAI.map((f, i) => `${i + 1}. ${f.name} - ${f.address} - Types: $
 PATIENT NEEDS: ${needTypes.join(', ')}
 LANGUAGE: ${languageContext}${needsTranslation ? ' (non-English)' : ''}
 
-STROKE CARE ANALYSIS RULES:
-- HIGH relevance: General hospitals, emergency departments, stroke centers, trauma centers
-- MEDIUM relevance: Urgent care centers (can stabilize but not ideal for stroke)
-- LOW relevance: Specialty hospitals (dental, eye, skin, ENT) that cannot treat stroke emergencies
+STRICT MEDICAL RELEVANCE RULES:
+- HIGH: ONLY general hospitals, emergency departments, trauma centers, stroke centers
+- MEDIUM: Urgent care centers  
+- LOW: Eye hospitals, dental hospitals, skin hospitals, ENT hospitals, specialty clinics
 
-IMPORTANT: Dental hospitals, eye hospitals, skin hospitals should get LOW relevance - they cannot treat strokes.
+MANDATORY: These facilities MUST get LOW relevance:
+- ANY hospital with "Eye" in name = LOW
+- ANY hospital with "Dental" in name = LOW  
+- ANY hospital with "Skin" in name = LOW
+- ANY hospital with "ENT" in name = LOW
+
+These facilities CANNOT treat stroke emergencies and must be rated LOW.
 
 Return JSON with detailed analysis for pattern matching:
 {
