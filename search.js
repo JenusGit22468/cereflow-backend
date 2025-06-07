@@ -615,28 +615,77 @@ Return JSON with detailed analysis for pattern matching:`;
     return 'other';
   }
 
-  // Function to apply AI insights using patterns
+  // Function to apply AI insights using patterns with SERVICE-SPECIFIC manual override
   function applyAIInsights(facility, index) {
     console.log(`🔍 Checking facility: ${facility.displayName?.text}`);
     
-    // MANUAL OVERRIDE - Force specialty hospitals to LOW regardless of ChatGPT
+    // SERVICE-SPECIFIC MANUAL OVERRIDE
     const name = (facility.displayName?.text || '').toLowerCase();
     console.log(`🔍 Name lowercased: ${name}`);
+    console.log(`🔍 Service types: ${needTypes.join(', ')}`);
     
-    if (name.includes('eye') || name.includes('dental') || name.includes('skin') || 
-        name.includes('ent') || name.includes('dermat') || name.includes('ophthalm')) {
-      console.log(`🚫 MANUAL OVERRIDE TRIGGERED for: ${name}`);
-      return {
-        medical_relevance: 'Low',
-        language_support: 'Unknown',
-        language_note: 'Language support not assessed',
-        service_match: 'Poor',
-        specialty_note: 'Specialty hospital - not equipped for stroke emergencies',
-        facility_type: 'specialty_hospital'
-      };
+    // FOR EMERGENCY - Strict exclusions (eye, dental, skin, ENT cannot treat stroke emergencies)
+    if (needTypes.includes('emergency')) {
+      if (name.includes('eye') || name.includes('dental') || name.includes('skin') || 
+          name.includes('ent') || name.includes('dermat') || name.includes('ophthalm')) {
+        console.log(`🚫 EMERGENCY OVERRIDE TRIGGERED for: ${name}`);
+        return {
+          medical_relevance: 'Low',
+          language_support: 'Unknown',
+          language_note: 'Language support not assessed',
+          service_match: 'Poor',
+          specialty_note: 'Specialty hospital - not equipped for stroke emergencies',
+          facility_type: 'specialty_hospital'
+        };
+      }
     }
     
-    console.log(`✅ No override needed for: ${name}`);
+    // FOR REHABILITATION/THERAPY - More selective exclusions
+    if (needTypes.includes('rehabilitation') || needTypes.includes('speech-therapy') || 
+        needTypes.includes('physical-therapy') || needTypes.includes('occupational-therapy')) {
+      
+      // Still exclude eye and dental (they don't do stroke rehab)
+      if (name.includes('eye') || name.includes('dental')) {
+        console.log(`🚫 REHAB OVERRIDE TRIGGERED for: ${name} (eye/dental not relevant for stroke rehab)`);
+        return {
+          medical_relevance: 'Low',
+          language_support: 'Unknown',
+          language_note: 'Language support not assessed',
+          service_match: 'Poor',
+          specialty_note: 'Specialty hospital - not relevant for stroke rehabilitation',
+          facility_type: 'specialty_hospital'
+        };
+      }
+      
+      // ALLOW speech therapy and PT clinics to be rated normally for therapy services
+      if (name.includes('speech') && needTypes.includes('speech-therapy')) {
+        console.log(`✅ ALLOWING speech therapy facility for speech-therapy service: ${name}`);
+        // Let it continue to normal AI analysis
+      }
+      
+      if ((name.includes('physical therapy') || name.includes('physiotherapy')) && 
+          needTypes.includes('physical-therapy')) {
+        console.log(`✅ ALLOWING physical therapy facility for physical-therapy service: ${name}`);
+        // Let it continue to normal AI analysis
+      }
+    }
+    
+    // FOR SUPPORT GROUPS - Only exclude clearly irrelevant specialties
+    if (needTypes.includes('support-groups')) {
+      if (name.includes('eye') || name.includes('dental') || name.includes('skin')) {
+        console.log(`🚫 SUPPORT GROUP OVERRIDE TRIGGERED for: ${name} (specialty not relevant for support)`);
+        return {
+          medical_relevance: 'Low',
+          language_support: 'Unknown',
+          language_note: 'Language support not assessed',
+          service_match: 'Poor',
+          specialty_note: 'Specialty hospital - not relevant for stroke support services',
+          facility_type: 'specialty_hospital'
+        };
+      }
+    }
+    
+    console.log(`✅ No service-specific override needed for: ${name}`);
 
     // If we have direct AI analysis for this facility, use it
     if (aiAnalysis && aiAnalysis.facilities && aiAnalysis.facilities[index]) {
@@ -673,7 +722,7 @@ Return JSON with detailed analysis for pattern matching:`;
       }
     }
     
-    // Apply rule-based insights for medical relevance
+    // Apply rule-based insights for medical relevance based on service type
     if (needTypes.includes('emergency')) {
       if (name.includes('stroke') || name.includes('trauma')) {
         insights.medical_relevance = 'High';
@@ -690,6 +739,48 @@ Return JSON with detailed analysis for pattern matching:`;
         insights.medical_relevance = 'Medium';
         insights.specialty_note = 'Urgent care facility, not specialized for stroke emergencies';
         insights.service_match = 'Fair';
+      }
+    }
+    
+    // Rehabilitation and therapy services
+    if (needTypes.includes('rehabilitation') || needTypes.includes('speech-therapy') || 
+        needTypes.includes('physical-therapy') || needTypes.includes('occupational-therapy')) {
+      
+      // Speech therapy clinics get high relevance for speech therapy
+      if (name.includes('speech') && needTypes.includes('speech-therapy')) {
+        insights.medical_relevance = 'High';
+        insights.specialty_note = 'Specialized speech therapy services';
+        insights.service_match = 'Excellent';
+      }
+      
+      // Physical therapy clinics get high relevance for physical therapy
+      if ((name.includes('physical therapy') || name.includes('physiotherapy')) && 
+          needTypes.includes('physical-therapy')) {
+        insights.medical_relevance = 'High';
+        insights.specialty_note = 'Specialized physical therapy services';
+        insights.service_match = 'Excellent';
+      }
+      
+      // Occupational therapy clinics get high relevance for occupational therapy
+      if (name.includes('occupational') && needTypes.includes('occupational-therapy')) {
+        insights.medical_relevance = 'High';
+        insights.specialty_note = 'Specialized occupational therapy services';
+        insights.service_match = 'Excellent';
+      }
+      
+      // Rehabilitation centers get high relevance for rehabilitation
+      if ((name.includes('rehabilitation') || name.includes('rehab')) && 
+          needTypes.includes('rehabilitation')) {
+        insights.medical_relevance = 'High';
+        insights.specialty_note = 'Specialized rehabilitation services';
+        insights.service_match = 'Excellent';
+      }
+      
+      // General hospitals also good for rehab services
+      if (facilityType === 'hospital' && !name.includes('eye') && !name.includes('dental')) {
+        insights.medical_relevance = 'High';
+        insights.specialty_note = 'Hospital with rehabilitation services';
+        insights.service_match = 'Good';
       }
     }
     
@@ -719,6 +810,9 @@ Return JSON with detailed analysis for pattern matching:`;
       ...aiInsights,
       likely_services: needTypes.includes('emergency') ? ['Emergency care', 'Stroke treatment'] : 
                       needTypes.includes('rehabilitation') ? ['Rehabilitation services', 'Therapy programs'] :
+                      needTypes.includes('speech-therapy') ? ['Speech therapy', 'Language therapy'] :
+                      needTypes.includes('physical-therapy') ? ['Physical therapy', 'Motor rehabilitation'] :
+                      needTypes.includes('occupational-therapy') ? ['Occupational therapy', 'Daily living skills'] :
                       ['Medical services']
     };
   });
