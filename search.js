@@ -637,8 +637,6 @@ Return JSON with detailed analysis for pattern matching:`;
     }
     
     console.log(`✅ No override needed for: ${name}`);
-    // ... rest of your existing function
-  }
 
     // If we have direct AI analysis for this facility, use it
     if (aiAnalysis && aiAnalysis.facilities && aiAnalysis.facilities[index]) {
@@ -647,7 +645,6 @@ Return JSON with detailed analysis for pattern matching:`;
     
     // Otherwise, apply patterns based on facility type
     const facilityType = getFacilityType(facility);
-
     
     let insights = {
       medical_relevance: 'Medium',
@@ -678,14 +675,14 @@ Return JSON with detailed analysis for pattern matching:`;
     
     // Apply rule-based insights for medical relevance
     if (needTypes.includes('emergency')) {
-      if (name.toLowerCase().includes('stroke') || name.toLowerCase().includes('trauma')) {
+      if (name.includes('stroke') || name.includes('trauma')) {
         insights.medical_relevance = 'High';
         insights.specialty_note = 'Specialized for stroke/trauma care';
         insights.service_match = 'Excellent';
       } else if (facilityType === 'hospital' && 
-          !name.toLowerCase().includes('eye') && 
-          !name.toLowerCase().includes('dental') && 
-          !name.toLowerCase().includes('skin')) {
+          !name.includes('eye') && 
+          !name.includes('dental') && 
+          !name.includes('skin')) {
         insights.medical_relevance = 'High';
         insights.specialty_note = 'Hospital with emergency department';
         insights.service_match = 'Excellent';
