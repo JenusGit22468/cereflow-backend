@@ -40,16 +40,6 @@ def health():
 def test():
     return jsonify({"message": "Test route works!"})
 
-@app.route('/api/health')
-def health():
-    return jsonify({
-        "status": "healthy",
-        "apis": {
-            "google_maps": "configured" if GOOGLE_MAPS_API_KEY else "missing",
-            "openai": "configured" if OPENAI_API_KEY else "missing"
-        }
-    })
-
 def get_search_terms(service):
     """Get appropriate search terms based on service type"""
     if service == 'emergency':
