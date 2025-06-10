@@ -26,6 +26,16 @@ openai.api_key = OPENAI_API_KEY
 def root():
     return jsonify({"message": "Backend is running!", "status": "ok"})
 
+@app.route('/api/health', methods=['GET'])
+def health():
+    return jsonify({
+        "status": "healthy",
+        "apis": {
+            "google_maps": "configured" if GOOGLE_MAPS_API_KEY else "missing",
+            "openai": "configured" if OPENAI_API_KEY else "missing"
+        }
+    })
+
 @app.route('/test')
 def test():
     return jsonify({"message": "Test route works!"})
