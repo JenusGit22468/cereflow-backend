@@ -408,13 +408,21 @@ class OptimizedSpeechProcessor:
             raise Exception(f"Transcription failed: {str(e)}")
     
     def enhance_text_fast(self, text: str) -> str:
-        """REAL OpenAI text enhancement"""
+        """Minimal text enhancement - only fix unclear words, keep natural speech"""
         try:
-            prompt = f"Fix grammar and clarity, keep meaning: '{text}'"
+            # Much more conservative prompt
+            prompt = f"""Only fix unclear or garbled words in this speech, keep everything else exactly the same. Do not change the person's natural speaking style, slang, or sentence structure. Only clarify words that are hard to understand:
+
+    Original: "{text}"
+
+    Fixed:"""
             
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": "You only fix unclear/garbled words. Keep the person's natural speech patterns, casual language, and speaking style. Make minimal changes."},
+                    {"role": "user", "content": prompt}
+                ],
                 max_tokens=100,
                 temperature=0,
                 top_p=1,
@@ -424,7 +432,13 @@ class OptimizedSpeechProcessor:
             
             enhanced_text = response.choices[0].message.content.strip()
             
-            if len(enhanced_text) < 3:
+            # Safety check - if AI changed too much, return original
+            original_words = text.lower().split()
+            enhanced_words = enhanced_text.lower().split()
+            
+            # If more than 30% of words changed, probably over-edited
+            if len(enhanced_words) == 0 or len(set(original_words) & set(enhanced_words)) / len(original_words) < 0.7:
+                print("AI over-edited, returning original")
                 return text
                 
             return enhanced_text
