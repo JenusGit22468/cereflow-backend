@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 import json
 import time
 import requests
-import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
@@ -154,15 +153,18 @@ class OptimizedSpeechProcessor:
                 }
             }
             
-            # Use async HTTP client for speed
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=data, headers=headers, timeout=15) as response:
-                    if response.status == 200:
-                        return await response.read()
-                    else:
-                        error_text = await response.text()
-                        print(f"Speech generation error: {response.status} - {error_text}")
-                        raise Exception(f"ElevenLabs API error: {response.status} - {error_text}")
+            # Use requests in thread pool for speed
+            def sync_request():
+                return requests.post(url, json=data, headers=headers, timeout=15)
+            
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(executor, sync_request)
+            
+            if response.status_code == 200:
+                return response.content
+            else:
+                print(f"Speech generation error: {response.status_code} - {response.text}")
+                raise Exception(f"ElevenLabs API error: {response.status_code} - {response.text}")
                         
         except Exception as e:
             print(f"Speech generation failed: {str(e)}")
@@ -336,30 +338,34 @@ async def process_speech_fast(audio: UploadFile = File(...), voice_id: str = Non
 async def get_voices():
     """Get available voices from ElevenLabs"""
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
+        def sync_get():
+            return requests.get(
                 f"{speech_processor.elevenlabs_base_url}/voices",
                 headers={"xi-api-key": ELEVENLABS_API_KEY}
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return JSONResponse({
-                        "success": True,
-                        "voices": [
-                            {
-                                "voice_id": voice["voice_id"],
-                                "name": voice["name"],
-                                "category": voice.get("category", "cloned")
-                            }
-                            for voice in data["voices"]
-                        ]
-                    })
-                else:
-                    return JSONResponse({
-                        "success": False,
-                        "error": f"API error: {response.status}",
-                        "voices": []
-                    })
+            )
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(executor, sync_get)
+
+        if response.status_code == 200:
+            data = response.json()
+            return JSONResponse({
+                "success": True,
+                "voices": [
+                    {
+                        "voice_id": voice["voice_id"],
+                        "name": voice["name"],
+                        "category": voice.get("category", "cloned")
+                    }
+                    for voice in data["voices"]
+                ]
+            })
+        else:
+            return JSONResponse({
+                "success": False,
+                "error": f"API error: {response.status_code}",
+                "voices": []
+            })
     except Exception as e:
         return JSONResponse({
             "success": False,
@@ -387,12 +393,14 @@ async def speed_test():
     # Test ElevenLabs
     try:
         el_start = time.time()
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
+        def sync_test():
+            return requests.get(
                 f"{speech_processor.elevenlabs_base_url}/voices",
                 headers={"xi-api-key": ELEVENLABS_API_KEY}
-            ) as response:
-                await response.read()
+            )
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(executor, sync_test)
         el_time = time.time() - el_start
     except Exception as e:
         el_time = f"Error: {str(e)}"
