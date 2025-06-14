@@ -26,7 +26,11 @@ print(f"OpenAI API Key: {'Found' if OPENAI_API_KEY else 'Missing'}")
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 openai.api_key = OPENAI_API_KEY
 
-@app.route('/api/health')
+@app.route('/')
+def root():
+    return jsonify({"message": "Backend is running!", "status": "ok"})
+
+@app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({
         "status": "healthy",
@@ -35,6 +39,10 @@ def health():
             "openai": "configured" if OPENAI_API_KEY else "missing"
         }
     })
+
+@app.route('/test')
+def test():
+    return jsonify({"message": "Test route works!"})
 
 def get_search_terms(service):
     """UNCHANGED: Get appropriate search terms based on service type"""
@@ -341,4 +349,4 @@ def search():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    app.run(host='0.0.0.0', port=3000, debug=False)
