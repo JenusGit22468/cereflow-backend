@@ -1,5 +1,7 @@
 import os
 import json
+import asyncio
+import aiohttp
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -7,6 +9,8 @@ import googlemaps
 import openai
 from dotenv import load_dotenv
 from geopy.distance import geodesic
+from concurrent.futures import ThreadPoolExecutor
+import time
 
 load_dotenv()
 
@@ -33,7 +37,7 @@ def health():
     })
 
 def get_search_terms(service):
-    """Get appropriate search terms based on service type"""
+    """UNCHANGED: Get appropriate search terms based on service type"""
     if service == 'emergency':
         return ['hospital', 'medical center', 'clinic', 'emergency room']
     elif service == 'rehab_therapy':
@@ -59,7 +63,8 @@ def get_search_terms(service):
         # Default to emergency
         return ['hospital', 'medical center', 'clinic', 'emergency room']
 
-def search_places(query, lat, lng):
+async def search_places_async(session, query, lat, lng):
+    """Async version of the original search_places function"""
     url = "https://places.googleapis.com/v1/places:searchText"
     headers = {
         'Content-Type': 'application/json',
@@ -74,59 +79,108 @@ def search_places(query, lat, lng):
                 'radius': 40000
             }
         },
-        'maxResultCount': 20
+        'maxResultCount': 20  # UNCHANGED: Keep original 20
     }
     
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        print(f"API Response Status: {response.status_code}")
-        if response.status_code != 200:
-            print(f"API Response Error: {response.text}")
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as e:
-        print(f"Places API error: {e}")
-        return None
+        timeout = aiohttp.ClientTimeout(total=8)  # 8 second timeout per request
+        async with session.post(url, headers=headers, json=payload, timeout=timeout) as response:
+            print(f"API Response Status for '{query}': {response.status}")
+            if response.status != 200:
+                error_text = await response.text()
+                print(f"API Response Error for '{query}': {error_text}")
+                return []
+            result = await response.json()
+            places = result.get('places', [])
+            print(f"Found {len(places)} results for '{query}'")
+            return places
+    except Exception as e:
+        print(f"Places API error for '{query}': {e}")
+        return []
 
-def analyze_with_ai(name, types, service):
+async def get_all_places_concurrently(search_terms, lat, lng):
+    """Get all places using concurrent requests instead of sequential"""
+    timeout = aiohttp.ClientTimeout(total=30)  # Overall timeout
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        tasks = [search_places_async(session, term, lat, lng) for term in search_terms]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        all_places = []
+        for i, result in enumerate(results):
+            if isinstance(result, list):
+                all_places.extend(result)
+            elif isinstance(result, Exception):
+                print(f"Error in search term {i}: {result}")
+        
+        return all_places
+
+def batch_analyze_with_ai(places_batch, service):
+    """Analyze multiple places in one AI call to reduce API overhead"""
+    if not places_batch:
+        return {}
+    
     try:
-        # Create service-specific prompts
+        # Prepare batch data
+        batch_text = ""
+        for i, (name, types) in enumerate(places_batch):
+            batch_text += f"{i+1}. Name: \"{name}\", Types: {types}\n"
+        
+        # Create service-specific prompts (UNCHANGED logic)
         if service == 'emergency':
-            ai_prompt = f"""Is "{name}" with types {types} a medical facility suitable for emergency stroke care?
-            
-            Respond with JSON: {{"is_medical": true/false, "score": 0-100, "reason": "brief explanation"}}"""
+            ai_prompt = f"""Analyze these medical facilities for emergency stroke care suitability. For each facility, determine if it's medical and rate 0-100:
+
+{batch_text}
+
+Respond with JSON array: [{{"index": 1, "is_medical": true/false, "score": 0-100, "reason": "brief explanation"}}, {{"index": 2, "is_medical": true/false, "score": 0-100, "reason": "brief explanation"}}, ...]"""
         elif service == 'rehab_therapy':
-            ai_prompt = f"""Is "{name}" with types {types} a rehabilitation or therapy facility suitable for stroke recovery (physical therapy, speech therapy, occupational therapy)?
-            
-            Respond with JSON: {{"is_medical": true/false, "score": 0-100, "reason": "brief explanation"}}"""
+            ai_prompt = f"""Analyze these facilities for stroke rehabilitation therapy suitability (physical therapy, speech therapy, occupational therapy). For each facility, determine if it's medical and rate 0-100:
+
+{batch_text}
+
+Respond with JSON array: [{{"index": 1, "is_medical": true/false, "score": 0-100, "reason": "brief explanation"}}, {{"index": 2, "is_medical": true/false, "score": 0-100, "reason": "brief explanation"}}, ...]"""
         elif service == 'support_groups':
-            ai_prompt = f"""Is "{name}" with types {types} a facility that could host stroke support groups or provide mental health support?
-            
-            Respond with JSON: {{"is_medical": true/false, "score": 0-100, "reason": "brief explanation"}}"""
+            ai_prompt = f"""Analyze these facilities for stroke support groups or mental health support suitability. For each facility, determine if it's medical and rate 0-100:
+
+{batch_text}
+
+Respond with JSON array: [{{"index": 1, "is_medical": true/false, "score": 0-100, "reason": "brief explanation"}}, {{"index": 2, "is_medical": true/false, "score": 0-100, "reason": "brief explanation"}}, ...]"""
         else:
-            ai_prompt = f"""Is "{name}" with types {types} a medical facility suitable for {service}?
-            
-            Respond with JSON: {{"is_medical": true/false, "score": 0-100, "reason": "brief explanation"}}"""
+            ai_prompt = f"""Analyze these medical facilities for {service} suitability. For each facility, determine if it's medical and rate 0-100:
+
+{batch_text}
+
+Respond with JSON array: [{{"index": 1, "is_medical": true/false, "score": 0-100, "reason": "brief explanation"}}, {{"index": 2, "is_medical": true/false, "score": 0-100, "reason": "brief explanation"}}, ...]"""
         
         ai_response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Analyze facilities and respond only with valid JSON."},
+                {"role": "system", "content": "Analyze facilities and respond only with valid JSON array. Be consistent with the original individual analysis criteria."},
                 {"role": "user", "content": ai_prompt}
             ],
-            max_tokens=100,
+            max_tokens=800,  # Increased for batch
             temperature=0.1
         )
         
-        result = json.loads(ai_response.choices[0].message.content.strip())
-        return result
+        results_array = json.loads(ai_response.choices[0].message.content.strip())
+        
+        # Convert to dictionary for easy lookup
+        results_dict = {}
+        for result in results_array:
+            idx = result.get('index', 0) - 1  # Convert to 0-based
+            if 0 <= idx < len(places_batch):
+                results_dict[idx] = result
+        
+        return results_dict
         
     except Exception as e:
-        print(f"AI error: {e}")
-        return {"is_medical": False, "score": 0, "reason": "Analysis failed"}
+        print(f"Batch AI error: {e}")
+        # Fallback: return default for all (same as original behavior when AI fails)
+        return {i: {"is_medical": False, "score": 0, "reason": "Analysis failed"} 
+                for i in range(len(places_batch))}
 
 @app.route('/api/search', methods=['POST'])
 def search():
+    start_time = time.time()
     data = request.json
     location = data.get('location')
     service = data.get('service', 'emergency')
@@ -134,7 +188,7 @@ def search():
     print(f"Search: {location}, {service}")
     
     try:
-        # Geocode
+        # Geocode (UNCHANGED)
         geocode_result = gmaps.geocode(location)
         if not geocode_result:
             return jsonify({"error": "Location not found"}), 400
@@ -143,19 +197,22 @@ def search():
         lng = geocode_result[0]['geometry']['location']['lng']
         print(f"Geocoded to: {lat}, {lng}")
         
-        # Get service-specific search terms
+        # Get service-specific search terms (UNCHANGED)
         search_terms = get_search_terms(service)
         print(f"Search terms for {service}: {search_terms}")
         
-        all_places = []
-        for term in search_terms:
-            print(f"Searching for: {term}")
-            result = search_places(term, lat, lng)
-            if result and result.get('places'):
-                all_places.extend(result['places'])
-                print(f"Found {len(result['places'])} results")
+        # OPTIMIZED: Concurrent places search instead of sequential
+        places_start = time.time()
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            all_places = loop.run_until_complete(get_all_places_concurrently(search_terms, lat, lng))
+        finally:
+            loop.close()
+        places_time = time.time() - places_start
+        print(f"Concurrent places search took: {places_time:.2f}s")
         
-        # Remove duplicates
+        # Remove duplicates (UNCHANGED logic)
         unique_places = {}
         for place in all_places:
             place_id = place.get('id')
@@ -164,20 +221,41 @@ def search():
         
         print(f"Total unique places: {len(unique_places)}")
         
+        # Process places with BATCHED AI analysis
+        places_list = list(unique_places.values())[:15]  # UNCHANGED: limit to 15
+        
+        # Prepare data for batch AI analysis
+        ai_start = time.time()
+        places_for_ai = []
+        place_details = []
+        
+        for place in places_list:
+            name = place.get('displayName', {}).get('text', 'Unknown')
+            types = place.get('types', [])
+            places_for_ai.append((name, types))
+            place_details.append(place)
+        
+        # OPTIMIZED: Batch AI analysis instead of individual calls
+        ai_results = batch_analyze_with_ai(places_for_ai, service)
+        ai_time = time.time() - ai_start
+        print(f"Batch AI analysis took: {ai_time:.2f}s")
+        
+        # Process results (UNCHANGED logic)
         results = []
-        for place in list(unique_places.values())[:15]:
+        for i, place in enumerate(place_details):
             try:
                 name = place.get('displayName', {}).get('text', 'Unknown')
                 types = place.get('types', [])
                 
-                # AI analysis with service-specific prompts
-                ai_result = analyze_with_ai(name, types, service)
+                # Get AI analysis result for this place
+                ai_result = ai_results.get(i, {"is_medical": False, "score": 0, "reason": "Analysis failed"})
                 
+                # UNCHANGED: Same filtering logic
                 if not ai_result.get('is_medical', False):
                     print(f"AI rejected: {name}")
                     continue
                 
-                # Distance
+                # UNCHANGED: Distance calculation
                 place_lat = place['location']['latitude']
                 place_lng = place['location']['longitude']
                 distance = geodesic((lat, lng), (place_lat, place_lng)).miles
@@ -185,11 +263,12 @@ def search():
                 if distance > 50:
                     continue
                 
+                # UNCHANGED: Score calculation
                 score = ai_result.get('score', 70)
                 if distance < 5:
                     score += 10
                 
-                # Create service-specific services object
+                # UNCHANGED: Create service-specific services object
                 services_obj = {
                     "emergency": service == 'emergency',
                     "rehab_therapy": service == 'rehab_therapy',
@@ -199,7 +278,7 @@ def search():
                     "rehabilitation": service == 'rehab_therapy'
                 }
                 
-                # Add service-specific details based on types and AI analysis
+                # UNCHANGED: Add service-specific details based on types and AI analysis
                 if service == 'rehab_therapy':
                     services_obj.update({
                         "physical_therapy": any(t in ['physiotherapist', 'physical_therapy'] for t in types),
@@ -207,6 +286,7 @@ def search():
                         "occupational_therapy": any(t in ['occupational_therapy'] for t in types)
                     })
                 
+                # UNCHANGED: Result object structure
                 result = {
                     "name": name,
                     "address": place.get('formattedAddress', 'Address not available'),
@@ -220,11 +300,11 @@ def search():
                         "website": place.get('websiteUri')
                     },
                     "rating": place.get('rating'),
-                    "rating_count": place.get('userRatingCount', 0),  # Add this line
+                    "rating_count": place.get('userRatingCount', 0),
                     "hours": "Contact for hours",
                     "place_id": place.get('id', 'unknown'),
                     "facility_types": types,
-                    "service_type": service  # Add this to help frontend distinguish
+                    "service_type": service
                 }
                 results.append(result)
                 print(f"Added: {name} (Score: {score})")
@@ -233,8 +313,13 @@ def search():
                 print(f"Error processing: {e}")
                 continue
         
+        # UNCHANGED: Sort by relevance score
         results.sort(key=lambda x: x['relevance_score'], reverse=True)
         
+        total_time = time.time() - start_time
+        print(f"TOTAL REQUEST TIME: {total_time:.2f}s")
+        
+        # UNCHANGED: Response structure
         return jsonify({
             "results": results,
             "search_metadata": {
@@ -242,7 +327,12 @@ def search():
                 "service": service,
                 "total_found": len(results),
                 "coordinates": {"lat": lat, "lng": lng},
-                "search_terms_used": search_terms
+                "search_terms_used": search_terms,
+                "performance": {
+                    "total_time": round(total_time, 2),
+                    "places_search_time": round(places_time, 2),
+                    "ai_analysis_time": round(ai_time, 2)
+                }
             }
         })
         
