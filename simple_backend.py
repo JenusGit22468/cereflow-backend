@@ -1,7 +1,5 @@
 import os
 import json
-import asyncio
-import aiohttp
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -9,7 +7,7 @@ import googlemaps
 import openai
 from dotenv import load_dotenv
 from geopy.distance import geodesic
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
 load_dotenv()
@@ -26,11 +24,10 @@ print(f"OpenAI API Key: {'Found' if OPENAI_API_KEY else 'Missing'}")
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 openai.api_key = OPENAI_API_KEY
 
-@app.route('/')
-def root():
-    return jsonify({"message": "Backend is running!", "status": "ok"})
+# Thread pool for concurrent operations
+executor = ThreadPoolExecutor(max_workers=10)
 
-@app.route('/api/health', methods=['GET'])
+@app.route('/api/health')
 def health():
     return jsonify({
         "status": "healthy",
@@ -39,10 +36,6 @@ def health():
             "openai": "configured" if OPENAI_API_KEY else "missing"
         }
     })
-
-@app.route('/test')
-def test():
-    return jsonify({"message": "Test route works!"})
 
 def get_search_terms(service):
     """UNCHANGED: Get appropriate search terms based on service type"""
@@ -71,8 +64,8 @@ def get_search_terms(service):
         # Default to emergency
         return ['hospital', 'medical center', 'clinic', 'emergency room']
 
-async def search_places_async(session, query, lat, lng):
-    """Async version of the original search_places function"""
+def search_places_threaded(query, lat, lng):
+    """Thread-safe version of search_places using requests (no aiohttp needed)"""
     url = "https://places.googleapis.com/v1/places:searchText"
     headers = {
         'Content-Type': 'application/json',
@@ -91,39 +84,42 @@ async def search_places_async(session, query, lat, lng):
     }
     
     try:
-        timeout = aiohttp.ClientTimeout(total=8)  # 8 second timeout per request
-        async with session.post(url, headers=headers, json=payload, timeout=timeout) as response:
-            print(f"API Response Status for '{query}': {response.status}")
-            if response.status != 200:
-                error_text = await response.text()
-                print(f"API Response Error for '{query}': {error_text}")
-                return []
-            result = await response.json()
-            places = result.get('places', [])
-            print(f"Found {len(places)} results for '{query}'")
-            return places
+        response = requests.post(url, headers=headers, json=payload, timeout=8)
+        print(f"API Response Status for '{query}': {response.status_code}")
+        if response.status_code != 200:
+            print(f"API Response Error for '{query}': {response.text}")
+            return []
+        result = response.json()
+        places = result.get('places', [])
+        print(f"Found {len(places)} results for '{query}'")
+        return places
     except Exception as e:
         print(f"Places API error for '{query}': {e}")
         return []
 
-async def get_all_places_concurrently(search_terms, lat, lng):
-    """Get all places using concurrent requests instead of sequential"""
-    timeout = aiohttp.ClientTimeout(total=30)  # Overall timeout
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        tasks = [search_places_async(session, term, lat, lng) for term in search_terms]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        all_places = []
-        for i, result in enumerate(results):
-            if isinstance(result, list):
-                all_places.extend(result)
-            elif isinstance(result, Exception):
-                print(f"Error in search term {i}: {result}")
-        
-        return all_places
+def get_all_places_concurrent(search_terms, lat, lng):
+    """Get all places using ThreadPoolExecutor instead of asyncio"""
+    all_places = []
+    
+    # Submit all search tasks concurrently
+    future_to_term = {
+        executor.submit(search_places_threaded, term, lat, lng): term 
+        for term in search_terms
+    }
+    
+    # Collect results as they complete
+    for future in as_completed(future_to_term, timeout=30):
+        term = future_to_term[future]
+        try:
+            places = future.result()
+            all_places.extend(places)
+        except Exception as e:
+            print(f"Error searching for '{term}': {e}")
+    
+    return all_places
 
 def batch_analyze_with_ai(places_batch, service):
-    """Analyze multiple places in one AI call to reduce API overhead"""
+    """UNCHANGED: Analyze multiple places in one AI call to reduce API overhead"""
     if not places_batch:
         return {}
     
@@ -165,7 +161,7 @@ Respond with JSON array: [{{"index": 1, "is_medical": true/false, "score": 0-100
                 {"role": "system", "content": "Analyze facilities and respond only with valid JSON array. Be consistent with the original individual analysis criteria."},
                 {"role": "user", "content": ai_prompt}
             ],
-            max_tokens=800,  # Increased for batch
+            max_tokens=800,
             temperature=0.1
         )
         
@@ -209,14 +205,9 @@ def search():
         search_terms = get_search_terms(service)
         print(f"Search terms for {service}: {search_terms}")
         
-        # OPTIMIZED: Concurrent places search instead of sequential
+        # OPTIMIZED: Concurrent places search using threading
         places_start = time.time()
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            all_places = loop.run_until_complete(get_all_places_concurrently(search_terms, lat, lng))
-        finally:
-            loop.close()
+        all_places = get_all_places_concurrent(search_terms, lat, lng)
         places_time = time.time() - places_start
         print(f"Concurrent places search took: {places_time:.2f}s")
         
@@ -349,4 +340,4 @@ def search():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3000, debug=False)
+    app.run(host='0.0.0.0', port=8000, debug=True)
