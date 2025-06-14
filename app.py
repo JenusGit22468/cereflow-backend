@@ -466,10 +466,10 @@ class OptimizedSpeechProcessor:
                 "text": text,
                 "model_id": "eleven_multilingual_v2",
                 "voice_settings": {
-                    "stability": 0.4,
-                    "similarity_boost": 0.8,
-                    "style": 0.3,
-                    "use_speaker_boost": True
+                    "stability": 0.7,
+                    "similarity_boost": 0.9,
+                    "style": 0.1,
+                    "use_speaker_boost": False
                 }
             }
             
