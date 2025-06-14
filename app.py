@@ -407,19 +407,19 @@ class OptimizedSpeechProcessor:
             raise Exception(f"Transcription failed: {str(e)}")
     
     def enhance_text_fast(self, text: str) -> str:
-        """Minimal text enhancement - only fix unclear words, keep natural speech"""
+        """Minimal text enhancement - preserve original language"""
         try:
-            # Much more conservative prompt
-            prompt = f"""Only fix unclear or garbled words in this speech, keep everything else exactly the same. Do not change the person's natural speaking style, slang, or sentence structure. Only clarify words that are hard to understand:
+            # Language-preserving prompt
+            prompt = f"""Only fix unclear or garbled words in this speech. KEEP THE SAME LANGUAGE - do not translate. Keep everything else exactly the same including the original language, natural speaking style, slang, and sentence structure:
 
     Original: "{text}"
 
-    Fixed:"""
+    Fixed (same language):"""
             
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You only fix unclear/garbled words. Keep the person's natural speech patterns, casual language, and speaking style. Make minimal changes."},
+                    {"role": "system", "content": "You only fix unclear/garbled words while preserving the original language. NEVER translate to a different language. Keep the person's natural speech patterns and original language."},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=100,
