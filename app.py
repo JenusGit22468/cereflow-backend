@@ -395,7 +395,6 @@ class OptimizedSpeechProcessor:
                 result = openai.Audio.transcribe(
                     model="whisper-1",
                     file=audio_file,
-                    language="en",
                     response_format="text",
                     temperature=0
                 )
