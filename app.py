@@ -513,6 +513,25 @@ class OptimizedSpeechProcessor:
             else:
                 print(f"Voice cloning failed: {response.status_code} - {response.text}")
                 raise Exception(f"ElevenLabs clone error: {response.status_code} - {response.text}")
+            
+    def delete_voice(self, voice_id: str) -> bool:
+        """Delete a cloned voice from ElevenLabs"""
+        try:
+            url = f"{self.elevenlabs_base_url}/voices/{voice_id}"
+            headers = {"xi-api-key": ELEVENLABS_API_KEY}
+            
+            response = requests.delete(url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                print(f"Voice {voice_id} deleted successfully")
+                return True
+            else:
+                print(f"Failed to delete voice {voice_id}: {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"Error deleting voice {voice_id}: {e}")
+            return False
+
                 
         except Exception as e:
             print(f"Voice cloning error: {str(e)}")
@@ -718,6 +737,18 @@ def speed_test():
         "total_test_time": round(total, 2),
         "status": "APIs are warmed up!" if isinstance(openai_time, float) and isinstance(el_time, float) else "Some APIs may be slow"
     })
+
+@app.route('/api/delete-voice/<voice_id>', methods=['DELETE'])
+def delete_voice(voice_id):
+    """Delete a temporary cloned voice"""
+    try:
+        success = speech_processor.delete_voice(voice_id)
+        if success:
+            return jsonify({"success": True, "message": "Voice deleted"})
+        else:
+            return jsonify({"success": False, "error": "Failed to delete voice"}), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
