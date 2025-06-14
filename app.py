@@ -601,9 +601,21 @@ def process_speech_fast():
                     print(f"Auto-cloning failed, using default voice: {str(e)}")
                     voice_id = None
             
-            # Step 3: REAL text enhancement and speech generation
+            # Step 3: Skip enhancement for mixed languages, use original text
             process_start = time.time()
-            enhanced_text = speech_processor.enhance_text_fast(original_text)
+
+            # Check if text contains mixed languages (has both English and non-English)
+            has_english = any(ord(c) < 128 for c in original_text if c.isalpha())
+            has_other = any(ord(c) >= 128 for c in original_text if c.isalpha())
+
+            if has_english and has_other:
+                # Mixed language - skip enhancement to preserve natural speech
+                enhanced_text = original_text
+                print("Mixed language detected - skipping enhancement")
+            else:
+                # Single language - apply minimal enhancement
+                enhanced_text = speech_processor.enhance_text_fast(original_text)
+
             audio_data = speech_processor.generate_speech_fast(enhanced_text, voice_id)
             process_time = time.time() - process_start
             
