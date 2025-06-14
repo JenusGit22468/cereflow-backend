@@ -368,7 +368,7 @@ class OptimizedSpeechProcessor:
         try:
             threading.Thread(target=self._warmup_openai, daemon=True).start()
             threading.Thread(target=self._warmup_elevenlabs, daemon=True).start()
-        except:
+        except Exception:
             pass
     
     def _warmup_openai(self):
@@ -389,12 +389,13 @@ class OptimizedSpeechProcessor:
             pass
         
     def transcribe_audio_fast(self, audio_file_path: str) -> str:
-        """REAL OpenAI Whisper transcription"""
+        """REAL OpenAI Whisper transcription with auto language detection"""
         try:
             with open(audio_file_path, "rb") as audio_file:
                 result = openai.Audio.transcribe(
                     model="whisper-1",
                     file=audio_file,
+                    # language="en",  # REMOVE THIS LINE TO AUTO-DETECT
                     response_format="text",
                     temperature=0
                 )
@@ -412,9 +413,9 @@ class OptimizedSpeechProcessor:
             # Language-preserving prompt
             prompt = f"""Only fix unclear or garbled words in this speech. KEEP THE SAME LANGUAGE - do not translate. Keep everything else exactly the same including the original language, natural speaking style, slang, and sentence structure:
 
-    Original: "{text}"
+Original: "{text}"
 
-    Fixed (same language):"""
+Fixed (same language):"""
             
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
@@ -508,12 +509,20 @@ class OptimizedSpeechProcessor:
             
             if response.status_code == 200:
                 result = response.json()
-                print(f"Voice cloned successfully: {result['voice_id']}")
-                return result["voice_id"]
+                voice_id = result.get("voice_id")
+                if voice_id:
+                    print(f"Voice cloned successfully: {voice_id}")
+                    return voice_id
+                else:
+                    raise Exception("No voice_id in response")
             else:
                 print(f"Voice cloning failed: {response.status_code} - {response.text}")
                 raise Exception(f"ElevenLabs clone error: {response.status_code} - {response.text}")
-            
+                
+        except Exception as e:
+            print(f"Voice cloning error: {str(e)}")
+            raise Exception(f"Voice cloning failed: {str(e)}")
+    
     def delete_voice(self, voice_id: str) -> bool:
         """Delete a cloned voice from ElevenLabs"""
         try:
@@ -525,17 +534,15 @@ class OptimizedSpeechProcessor:
             if response.status_code == 200:
                 print(f"Voice {voice_id} deleted successfully")
                 return True
+            elif response.status_code == 422:
+                print(f"Voice {voice_id} not found or already deleted")
+                return True  # Consider this success since voice is gone
             else:
-                print(f"Failed to delete voice {voice_id}: {response.status_code}")
+                print(f"Failed to delete voice {voice_id}: {response.status_code} - {response.text}")
                 return False
         except Exception as e:
             print(f"Error deleting voice {voice_id}: {e}")
             return False
-
-                
-        except Exception as e:
-            print(f"Voice cloning error: {str(e)}")
-            raise Exception(f"Voice cloning failed: {str(e)}")
 
 # Initialize speech processor
 speech_processor = OptimizedSpeechProcessor()
@@ -609,16 +616,19 @@ def process_speech_fast():
             
             # Step 2: REAL auto voice cloning if needed
             clone_time = 0
+            auto_cloned = False
             if not voice_id and auto_clone:
                 try:
                     clone_start = time.time()
                     print("Auto-cloning voice from user's speech...")
                     voice_id = speech_processor.clone_voice("AutoClone", temp_audio_path)
                     clone_time = time.time() - clone_start
+                    auto_cloned = True
                     print(f"Auto-cloned voice: {voice_id} in {clone_time:.2f}s")
                 except Exception as e:
                     print(f"Auto-cloning failed, using default voice: {str(e)}")
                     voice_id = None
+                    auto_cloned = False
             
             # Step 3: Skip enhancement for mixed languages, use original text
             process_start = time.time()
@@ -652,7 +662,7 @@ def process_speech_fast():
                     "total": round(total_time, 2)
                 },
                 "voice_used": voice_id or "default",
-                "auto_cloned": voice_id is not None and auto_clone,
+                "auto_cloned": auto_cloned,
                 "speed_optimized": True
             })
             
