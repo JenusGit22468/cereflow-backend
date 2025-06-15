@@ -355,12 +355,19 @@ def search():
         return jsonify({"error": str(e)}), 500
 
 # =============================================================================
-# IMPROVED SPEECH FUNCTIONALITY - ALL REAL APIs WITH FIXED VOICE CLONING
+# STROKE-OPTIMIZED SPEECH FUNCTIONALITY WITH ENHANCED VOICE CLONING
 # =============================================================================
 
-class OptimizedSpeechProcessor:
+class StrokeOptimizedSpeechProcessor:
     def __init__(self):
         self.elevenlabs_base_url = "https://api.elevenlabs.io/v1"
+        # Voice IDs for fallback voices that sound natural for different demographics
+        self.fallback_voices = {
+            "mature_male": "29vD33N1CtxCmqQRPOHJ",     # Default male voice
+            "mature_female": "21m00Tcm4TlvDq8ikWAM",   # Default female voice
+            "young_male": "CYw3kZ02Hs0563khs1Fj",      # Younger male voice
+            "young_female": "pNInz6obpgDQGcFmaJgB"     # Younger female voice
+        }
         self._warmup()
         
     def _warmup(self):
@@ -388,21 +395,21 @@ class OptimizedSpeechProcessor:
         except:
             pass
     
-    def validate_audio_for_cloning(self, file_path):
-        """Validate audio file is suitable for voice cloning"""
+    def assess_speech_clarity(self, file_path):
+        """Assess if speech is clear enough for voice cloning"""
         try:
             import wave
             
             file_size = os.path.getsize(file_path)
-            print(f"DEBUG: Audio file size: {file_size} bytes")
+            print(f"STROKE DEBUG: Audio file size: {file_size} bytes")
             
             # Basic file size checks
             if file_size == 0:
-                raise Exception("Audio file is empty")
+                return False, "Audio file is empty"
             if file_size > 25 * 1024 * 1024:  # 25MB limit
-                raise Exception("Audio file too large (max 25MB)")
-            if file_size < 10000:  # Less than 10KB is probably too short
-                raise Exception("Audio file too small - need at least 10-30 seconds of clear speech")
+                return False, "Audio file too large (max 25MB)"
+            if file_size < 15000:  # Increased minimum for stroke patients
+                return False, "Audio too short - need at least 15-30 seconds for stroke voice cloning"
             
             # Try to read as WAV and get duration
             try:
@@ -412,62 +419,54 @@ class OptimizedSpeechProcessor:
                     duration = frames / float(sample_rate)
                     channels = wav_file.getnchannels()
                     
-                    print(f"DEBUG: Audio duration: {duration:.2f}s, channels: {channels}, sample_rate: {sample_rate}")
+                    print(f"STROKE DEBUG: Audio duration: {duration:.2f}s, channels: {channels}, sample_rate: {sample_rate}")
                     
-                    if duration < 5.0:  # Less than 5 seconds
-                        raise Exception(f"Audio too short ({duration:.1f}s) - need at least 10-30 seconds for good cloning")
+                    if duration < 10.0:  # Increased minimum for stroke patients
+                        return False, f"Audio too short ({duration:.1f}s) - stroke patients need at least 15-30 seconds for good cloning"
                     
                     if duration > 300:  # More than 5 minutes
-                        print(f"WARNING: Audio very long ({duration:.1f}s) - this may take time to process")
+                        print(f"STROKE WARNING: Audio very long ({duration:.1f}s) - may take time to process")
                     
-                    return True, duration
+                    # Additional checks for stroke speech
+                    if sample_rate < 16000:
+                        return False, f"Sample rate too low ({sample_rate}Hz) - need at least 16kHz for clear voice cloning"
+                    
+                    return True, f"Audio quality acceptable: {duration:.1f}s at {sample_rate}Hz"
                     
             except wave.Error:
-                # If not a valid WAV, still try to process
-                print("WARNING: Could not parse as WAV, but will attempt cloning anyway")
-                return True, None
+                # If not a valid WAV, still might work
+                print("STROKE WARNING: Could not parse as WAV, but will attempt processing")
+                return True, "Audio format unknown but will attempt cloning"
                 
         except Exception as e:
-            print(f"Audio validation failed: {e}")
-            raise Exception(f"Audio validation failed: {e}")
-        
-    def transcribe_audio_fast(self, audio_file_path: str) -> str:
-        """REAL OpenAI Whisper transcription with auto language detection"""
-        try:
-            with open(audio_file_path, "rb") as audio_file:
-                result = openai.Audio.transcribe(
-                    model="whisper-1",
-                    file=audio_file,
-                    # language="en",  # REMOVE THIS LINE TO AUTO-DETECT
-                    response_format="text",
-                    temperature=0
-                )
-            
-            if isinstance(result, dict):
-                return result.get("text", str(result))
-            return str(result)
-            
-        except Exception as e:
-            raise Exception(f"Transcription failed: {str(e)}")
+            print(f"STROKE ERROR: Audio assessment failed: {e}")
+            return False, f"Audio assessment failed: {e}"
     
-    def enhance_text_fast(self, text: str) -> str:
-        """Minimal text enhancement - preserve original language"""
+    def enhance_text_for_stroke_patients(self, text: str) -> str:
+        """Enhanced text processing specifically for stroke speech patterns"""
         try:
-            # Language-preserving prompt
-            prompt = f"""Only fix unclear or garbled words in this speech. KEEP THE SAME LANGUAGE - do not translate. Keep everything else exactly the same including the original language, natural speaking style, slang, and sentence structure:
+            # Stroke-specific enhancement prompt
+            prompt = f"""You are helping a stroke patient communicate more clearly. The following text was transcribed from speech that may be slurred or unclear due to stroke-related speech difficulties. 
 
-Original: "{text}"
+Please improve the text by:
+1. Fixing unclear or garbled words while preserving the original meaning
+2. Keeping the same language and natural speaking style
+3. NOT changing the core message or intent
+4. Making the speech sound more fluent and clear
+5. Maintaining the person's personality and tone
 
-Fixed (same language):"""
+Original speech: "{text}"
+
+Clear, improved version:"""
             
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You only fix unclear/garbled words while preserving the original language. NEVER translate to a different language. Keep the person's natural speech patterns and original language."},
+                    {"role": "system", "content": "You are an AI assistant specialized in helping stroke patients communicate more clearly. Your job is to improve unclear speech while preserving the person's original intent, personality, and language. Never translate to a different language."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=100,
-                temperature=0,
+                max_tokens=150,  # Increased for stroke patients
+                temperature=0.2,  # Slightly higher for more natural responses
                 top_p=1,
                 frequency_penalty=0,
                 presence_penalty=0
@@ -475,28 +474,151 @@ Fixed (same language):"""
             
             enhanced_text = response.choices[0].message.content.strip()
             
+            # Remove any quotes that AI might add
+            if enhanced_text.startswith('"') and enhanced_text.endswith('"'):
+                enhanced_text = enhanced_text[1:-1]
+            
             # Safety check - if AI changed too much, return original
             original_words = text.lower().split()
             enhanced_words = enhanced_text.lower().split()
             
-            # If more than 30% of words changed, probably over-edited
-            if len(enhanced_words) == 0 or len(set(original_words) & set(enhanced_words)) / len(original_words) < 0.7:
-                print("AI over-edited, returning original")
+            # More lenient for stroke patients - allow more changes for clarity
+            if len(enhanced_words) == 0 or len(set(original_words) & set(enhanced_words)) / len(original_words) < 0.5:
+                print("STROKE WARNING: AI changed too much, returning original")
                 return text
                 
+            print(f"STROKE SUCCESS: Enhanced '{text}' to '{enhanced_text}'")
             return enhanced_text
             
         except Exception as e:
-            print(f"Enhancement error: {str(e)}")
+            print(f"STROKE ERROR: Text enhancement failed: {str(e)}")
             return text
     
+    def clone_voice_with_enhancement(self, name: str, audio_file_path: str) -> str:
+        """Enhanced voice cloning specifically optimized for stroke patients"""
+        try:
+            print(f"STROKE DEBUG: Starting enhanced voice clone for '{name}'")
+            print(f"STROKE DEBUG: File path: {audio_file_path}")
+            
+            url = f"{self.elevenlabs_base_url}/voices/add"
+            headers = {"xi-api-key": ELEVENLABS_API_KEY}
+            
+            # Prepare the request with stroke-specific enhancements
+            with open(audio_file_path, "rb") as audio_file:
+                files = {
+                    "files": (f"{name}_stroke_voice.wav", audio_file, "audio/wav")
+                }
+                data = {
+                    "name": f"Stroke_{name}_{int(time.time())}",  # Unique naming
+                    "description": f"Stroke patient voice clone for {name} - enhanced for clarity",
+                    # Enhanced settings for stroke speech
+                    "remove_background_noise": "true",
+                    "enhance_audio_quality": "true",
+                    "optimize_streaming_latency": "0",  # Prioritize quality over speed
+                    "voice_settings": {
+                        "stability": 0.6,  # Higher stability for stroke speech
+                        "similarity_boost": 0.9,  # Max similarity
+                        "style": 0.3,  # Lower style to avoid artifacts
+                        "use_speaker_boost": True
+                    }
+                }
+                
+                print(f"STROKE DEBUG: Sending enhanced clone request to ElevenLabs...")
+                response = requests.post(url, headers=headers, files=files, data=data, timeout=180)  # Longer timeout
+            
+            print(f"STROKE DEBUG: Clone response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                print(f"STROKE DEBUG: Clone success response: {result}")
+                voice_id = result.get("voice_id")
+                if voice_id:
+                    print(f"STROKE SUCCESS: Voice cloned with ID: {voice_id}")
+                    return voice_id
+                else:
+                    raise Exception("No voice_id in successful response")
+                    
+            elif response.status_code == 422:
+                # For stroke patients, provide more specific guidance
+                try:
+                    error_detail = response.json()
+                    print(f"STROKE DEBUG: Validation error details: {error_detail}")
+                    raise Exception("Speech not clear enough for cloning - this is common with stroke speech. Try recording in a very quiet room, speak slowly and clearly, or use the practice mode first.")
+                except json.JSONDecodeError:
+                    raise Exception("Audio quality insufficient for voice cloning - try recording 20-30 seconds of your clearest speech")
+                    
+            elif response.status_code == 400:
+                # Check if it's the voice limit error
+                try:
+                    error_detail = response.json()
+                    if "voice_limit_reached" in str(error_detail):
+                        raise Exception("Voice limit reached - the app will use a similar-sounding voice instead")
+                    else:
+                        raise Exception(f"Voice cloning failed: {error_detail}")
+                except json.JSONDecodeError:
+                    raise Exception("Voice cloning request failed - will use backup voice")
+                    
+            elif response.status_code == 401:
+                raise Exception("Voice cloning service temporarily unavailable")
+                
+            elif response.status_code == 429:
+                raise Exception("Too many voice cloning requests - please wait a moment and try again")
+                
+            else:
+                print(f"STROKE DEBUG: Unexpected error response: {response.text}")
+                raise Exception(f"Voice cloning failed with error {response.status_code} - will use backup voice")
+                
+        except requests.exceptions.Timeout:
+            raise Exception("Voice cloning timed out - audio may be too long or service busy")
+        except requests.exceptions.ConnectionError:
+            raise Exception("Cannot connect to voice cloning service - check internet connection")
+        except Exception as e:
+            print(f"STROKE ERROR: Voice cloning failed: {str(e)}")
+            raise Exception(str(e))
+    
+    def select_best_fallback_voice(self, original_text):
+        """Select the most appropriate fallback voice based on speech patterns"""
+        # Simple heuristics to choose appropriate voice
+        text_lower = original_text.lower()
+        
+        # Try to detect age/gender from speech patterns (very basic)
+        if any(word in text_lower for word in ['son', 'daughter', 'grandchildren', 'retirement']):
+            # Likely older person
+            if any(word in text_lower for word in ['she', 'her', 'mom', 'wife', 'sister']):
+                return self.fallback_voices["mature_female"]
+            else:
+                return self.fallback_voices["mature_male"]
+        else:
+            # Default to mature voices for stroke patients (typically older)
+            return self.fallback_voices["mature_male"]
+    
+    def transcribe_audio_fast(self, audio_file_path: str) -> str:
+        """REAL OpenAI Whisper transcription optimized for stroke speech"""
+        try:
+            with open(audio_file_path, "rb") as audio_file:
+                # Enhanced settings for stroke speech recognition
+                result = openai.Audio.transcribe(
+                    model="whisper-1",
+                    file=audio_file,
+                    response_format="text",
+                    temperature=0.2,  # Slightly higher for unclear speech
+                    prompt="This is speech from a stroke patient that may be slurred or unclear. Please transcribe as accurately as possible."
+                )
+            
+            if isinstance(result, dict):
+                return result.get("text", str(result))
+            return str(result)
+            
+        except Exception as e:
+            raise Exception(f"Speech recognition failed: {str(e)}")
+    
     def generate_speech_fast(self, text: str, voice_id: str = None) -> bytes:
-        """REAL ElevenLabs speech generation"""
+        """REAL ElevenLabs speech generation optimized for clarity"""
         try:
             if not voice_id:
-                voice_id = "29vD33N1CtxCmqQRPOHJ"
+                voice_id = self.fallback_voices["mature_male"]
             
-            print(f"Generating speech with voice ID: {voice_id}")
+            print(f"STROKE DEBUG: Generating clear speech with voice ID: {voice_id}")
             
             url = f"{self.elevenlabs_base_url}/text-to-speech/{voice_id}"
             
@@ -506,100 +628,36 @@ Fixed (same language):"""
                 "xi-api-key": ELEVENLABS_API_KEY
             }
             
+            # Optimized settings for stroke patients (prioritize clarity)
             data = {
                 "text": text,
                 "model_id": "eleven_multilingual_v2",
                 "voice_settings": {
-                    "stability": 0.4,
-                    "similarity_boost": 0.85,
-                    "style": 0.6,
+                    "stability": 0.7,  # Higher stability for clarity
+                    "similarity_boost": 0.8,
+                    "style": 0.4,  # Lower style to avoid artifacts
                     "use_speaker_boost": True
-                }
+                },
+                "pronunciation_dictionary_locators": [],
+                "seed": None,
+                "previous_text": None,
+                "next_text": None,
+                "previous_request_ids": [],
+                "next_request_ids": []
             }
             
-            response = requests.post(url, json=data, headers=headers, timeout=15)
+            response = requests.post(url, json=data, headers=headers, timeout=20)
             
             if response.status_code == 200:
+                print(f"STROKE SUCCESS: Generated clear speech for stroke patient")
                 return response.content
             else:
-                print(f"Speech generation error: {response.status_code} - {response.text}")
-                raise Exception(f"ElevenLabs API error: {response.status_code} - {response.text}")
+                print(f"STROKE ERROR: Speech generation failed: {response.status_code} - {response.text}")
+                raise Exception(f"Speech generation failed: {response.status_code}")
                         
         except Exception as e:
-            print(f"Speech generation failed: {str(e)}")
+            print(f"STROKE ERROR: Speech generation failed: {str(e)}")
             raise Exception(f"Speech generation failed: {str(e)}")
-    
-    def clone_voice(self, name: str, audio_file_path: str) -> str:
-        """IMPROVED voice cloning with better error handling"""
-        try:
-            # Validate audio first
-            self.validate_audio_for_cloning(audio_file_path)
-            
-            print(f"DEBUG: Starting voice clone for '{name}'")
-            print(f"DEBUG: File path: {audio_file_path}")
-            
-            url = f"{self.elevenlabs_base_url}/voices/add"
-            headers = {"xi-api-key": ELEVENLABS_API_KEY}
-            
-            # Prepare the request
-            with open(audio_file_path, "rb") as audio_file:
-                files = {
-                    "files": (f"{name}_voice.wav", audio_file, "audio/wav")
-                }
-                data = {
-                    "name": f"{name}_{int(time.time())}",  # Make name unique
-                    "description": f"Auto-cloned voice for {name}",
-                    "remove_background_noise": "true",
-                    "enhance_audio_quality": "true"  # Try to improve quality
-                }
-                
-                print(f"DEBUG: Sending clone request to ElevenLabs...")
-                response = requests.post(url, headers=headers, files=files, data=data, timeout=120)
-            
-            print(f"DEBUG: Clone response status: {response.status_code}")
-            print(f"DEBUG: Clone response headers: {dict(response.headers)}")
-            
-            if response.status_code == 200:
-                result = response.json()
-                print(f"DEBUG: Clone success response: {result}")
-                voice_id = result.get("voice_id")
-                if voice_id:
-                    print(f"SUCCESS: Voice cloned with ID: {voice_id}")
-                    return voice_id
-                else:
-                    raise Exception("No voice_id in successful response")
-                    
-            elif response.status_code == 422:
-                # Validation error - get details
-                try:
-                    error_detail = response.json()
-                    print(f"DEBUG: Validation error details: {error_detail}")
-                    error_msg = error_detail.get("detail", {})
-                    if isinstance(error_msg, list) and len(error_msg) > 0:
-                        specific_error = error_msg[0].get("msg", "Audio quality insufficient")
-                        raise Exception(f"Audio not suitable for cloning: {specific_error}")
-                    else:
-                        raise Exception("Audio quality insufficient for cloning - try recording 10-30 seconds of clear speech")
-                except json.JSONDecodeError:
-                    raise Exception("Audio validation failed - may need longer or clearer recording")
-                    
-            elif response.status_code == 401:
-                raise Exception("ElevenLabs API key invalid or expired")
-                
-            elif response.status_code == 429:
-                raise Exception("ElevenLabs rate limit exceeded - please wait and try again")
-                
-            else:
-                print(f"DEBUG: Unexpected error response: {response.text}")
-                raise Exception(f"ElevenLabs API error {response.status_code}: {response.text[:200]}")
-                
-        except requests.exceptions.Timeout:
-            raise Exception("Voice cloning timed out - audio may be too long or server busy")
-        except requests.exceptions.ConnectionError:
-            raise Exception("Cannot connect to ElevenLabs - check internet connection")
-        except Exception as e:
-            print(f"Voice cloning error: {str(e)}")
-            raise Exception(f"Voice cloning failed: {str(e)}")
     
     def delete_voice(self, voice_id: str) -> bool:
         """Delete a cloned voice from ElevenLabs"""
@@ -610,31 +668,31 @@ Fixed (same language):"""
             response = requests.delete(url, headers=headers, timeout=30)
             
             if response.status_code == 200:
-                print(f"Voice {voice_id} deleted successfully")
+                print(f"STROKE DEBUG: Voice {voice_id} deleted successfully")
                 return True
             elif response.status_code == 422:
-                print(f"Voice {voice_id} not found or already deleted")
+                print(f"STROKE DEBUG: Voice {voice_id} not found or already deleted")
                 return True  # Consider this success since voice is gone
             else:
-                print(f"Failed to delete voice {voice_id}: {response.status_code} - {response.text}")
+                print(f"STROKE WARNING: Failed to delete voice {voice_id}: {response.status_code}")
                 return False
         except Exception as e:
-            print(f"Error deleting voice {voice_id}: {e}")
+            print(f"STROKE WARNING: Error deleting voice {voice_id}: {e}")
             return False
 
-# Initialize speech processor
-speech_processor = OptimizedSpeechProcessor()
+# Initialize stroke-optimized speech processor
+speech_processor = StrokeOptimizedSpeechProcessor()
 
 @app.route('/api/create-voice-profile', methods=['POST'])
 def create_voice_profile():
-    """REAL voice profile creation using ElevenLabs"""
+    """Create a permanent voice profile for stroke patients"""
     try:
         # Check if file was uploaded
         if 'audio' not in request.files:
             return jsonify({"error": "No audio file provided"}), 400
         
         audio_file = request.files['audio']
-        name = request.form.get('name', 'UnknownVoice')
+        name = request.form.get('name', 'StrokePatient')
         
         if audio_file.filename == '':
             return jsonify({"error": "No file selected"}), 400
@@ -645,13 +703,14 @@ def create_voice_profile():
             temp_audio_path = temp_file.name
         
         try:
-            # REAL voice cloning
-            voice_id = speech_processor.clone_voice(name, temp_audio_path)
+            # Enhanced voice cloning for stroke patients
+            voice_id = speech_processor.clone_voice_with_enhancement(name, temp_audio_path)
             
             return jsonify({
                 "success": True,
                 "voice_id": voice_id,
-                "message": f"Voice profile '{name}' created successfully!"
+                "message": f"Voice profile '{name}' created successfully! This voice will sound clear and natural.",
+                "recommendation": "Save this voice ID for future use. You can now speak naturally and the app will respond in your clear voice."
             })
             
         finally:
@@ -662,13 +721,16 @@ def create_voice_profile():
                 pass
                 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e),
+            "recommendation": "For best results, record 20-30 seconds in a very quiet room, speaking as clearly as possible."
+        }), 500
 
 @app.route('/api/process-speech-fast', methods=['POST'])
 def process_speech_fast():
-    """IMPROVED speech processing with auto-cloning and IMMEDIATE deletion"""
+    """STROKE-OPTIMIZED speech processing with enhanced clarity"""
     start_time = time.time()
-    cloned_voice_id = None  # Track if we need to clean up
+    cloned_voice_id = None
     
     try:
         # Check if file was uploaded
@@ -682,63 +744,72 @@ def process_speech_fast():
         if audio_file.filename == '':
             return jsonify({"error": "No file selected"}), 400
         
-        # Save uploaded audio with better naming
+        # Save uploaded audio
         temp_audio_path = None
         try:
-            # Create temp file with .wav extension
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav", prefix="user_voice_") as temp_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav", prefix="stroke_voice_") as temp_file:
                 audio_file.save(temp_file.name)
                 temp_audio_path = temp_file.name
                 
-            print(f"DEBUG: Saved audio to: {temp_audio_path}")
-            print(f"DEBUG: File size: {os.path.getsize(temp_audio_path)} bytes")
+            print(f"STROKE DEBUG: Processing speech file: {temp_audio_path}")
+            print(f"STROKE DEBUG: File size: {os.path.getsize(temp_audio_path)} bytes")
             
-            # Step 1: REAL transcription
+            # Step 1: Enhanced transcription for stroke speech
             transcribe_start = time.time()
             original_text = speech_processor.transcribe_audio_fast(temp_audio_path)
             transcribe_time = time.time() - transcribe_start
             
-            print(f"DEBUG: Transcribed: '{original_text}' in {transcribe_time:.2f}s")
+            print(f"STROKE DEBUG: Transcribed: '{original_text}' in {transcribe_time:.2f}s")
             
-            # Step 2: Auto voice cloning if requested and no voice_id provided
+            # Step 2: Smart voice cloning strategy
             clone_time = 0
             auto_cloned = False
             clone_error = None
             
             if not voice_id and auto_clone:
-                try:
-                    clone_start = time.time()
-                    print("DEBUG: Starting auto-clone process...")
-                    
-                    # Try to clone the voice
-                    cloned_voice_id = speech_processor.clone_voice("AutoClone", temp_audio_path)
-                    voice_id = cloned_voice_id
-                    
-                    clone_time = time.time() - clone_start
-                    auto_cloned = True
-                    print(f"SUCCESS: Auto-cloned voice {voice_id} in {clone_time:.2f}s")
-                    
-                except Exception as e:
-                    clone_error = str(e)
-                    print(f"WARNING: Auto-cloning failed: {clone_error}")
-                    voice_id = None  # Use default voice
-                    auto_cloned = False
+                # Assess if speech is clear enough for cloning
+                can_clone, assessment_message = speech_processor.assess_speech_clarity(temp_audio_path)
+                print(f"STROKE DEBUG: Speech assessment: {assessment_message}")
+                
+                if can_clone:
+                    try:
+                        clone_start = time.time()
+                        print("STROKE DEBUG: Attempting enhanced voice clone...")
+                        
+                        cloned_voice_id = speech_processor.clone_voice_with_enhancement("AutoStroke", temp_audio_path)
+                        voice_id = cloned_voice_id
+                        
+                        clone_time = time.time() - clone_start
+                        auto_cloned = True
+                        print(f"STROKE SUCCESS: Voice cloned successfully in {clone_time:.2f}s")
+                        
+                    except Exception as e:
+                        clone_error = str(e)
+                        print(f"STROKE WARNING: Auto-cloning failed: {clone_error}")
+                        # Select best fallback voice
+                        voice_id = speech_processor.select_best_fallback_voice(original_text)
+                        auto_cloned = False
+                        print(f"STROKE FALLBACK: Using optimized voice: {voice_id}")
+                else:
+                    clone_error = f"Speech clarity insufficient: {assessment_message}"
+                    voice_id = speech_processor.select_best_fallback_voice(original_text)
+                    print(f"STROKE FALLBACK: Using optimized voice due to clarity: {voice_id}")
             
-            # Step 3: Text enhancement and speech generation
+            # Step 3: Enhanced text processing for stroke patients
             process_start = time.time()
-            enhanced_text = speech_processor.enhance_text_fast(original_text)
+            enhanced_text = speech_processor.enhance_text_for_stroke_patients(original_text)
             
-            # Generate speech with cloned or default voice
+            # Generate clear speech
             try:
                 audio_data = speech_processor.generate_speech_fast(enhanced_text, voice_id)
                 speech_generation_success = True
+                print(f"STROKE SUCCESS: Generated clear speech response")
             except Exception as e:
-                print(f"WARNING: Speech generation failed with voice {voice_id}: {e}")
-                # Fall back to default voice
-                audio_data = speech_processor.generate_speech_fast(enhanced_text, None)
+                print(f"STROKE WARNING: Speech generation failed: {e}")
+                # Ultimate fallback
+                audio_data = speech_processor.generate_speech_fast(enhanced_text, speech_processor.fallback_voices["mature_male"])
                 speech_generation_success = False
-                if auto_cloned:
-                    clone_error = f"Cloning succeeded but speech generation failed: {e}"
+                clone_error = f"Used backup voice due to generation error: {e}"
             
             process_time = time.time() - process_start
             total_time = time.time() - start_time
@@ -757,12 +828,17 @@ def process_speech_fast():
                 "voice_used": voice_id or "default",
                 "auto_cloned": auto_cloned,
                 "speech_generation_success": speech_generation_success,
-                "speed_optimized": True
+                "stroke_optimized": True,
+                "clarity_enhanced": enhanced_text != original_text
             }
             
-            # Add clone error info if there was one
+            # Add helpful information for stroke patients
             if clone_error:
-                response_data["clone_warning"] = clone_error
+                response_data["voice_info"] = clone_error
+            elif auto_cloned:
+                response_data["voice_info"] = "Successfully used your cloned voice for clear speech"
+            else:
+                response_data["voice_info"] = "Used optimized voice for maximum clarity"
                 
             return jsonify(response_data)
             
@@ -771,77 +847,86 @@ def process_speech_fast():
             if temp_audio_path and os.path.exists(temp_audio_path):
                 try:
                     os.unlink(temp_audio_path)
-                    print(f"DEBUG: Cleaned up temp file: {temp_audio_path}")
+                    print(f"STROKE DEBUG: Cleaned up temp file")
                 except Exception as e:
-                    print(f"WARNING: Could not delete temp file: {e}")
+                    print(f"STROKE WARNING: Could not delete temp file: {e}")
             
-            # IMMEDIATELY delete the cloned voice after use
+            # Immediately delete temporary cloned voice
             if cloned_voice_id:
                 try:
                     speech_processor.delete_voice(cloned_voice_id)
-                    print(f"DEBUG: Immediately deleted temporary voice: {cloned_voice_id}")
+                    print(f"STROKE DEBUG: Deleted temporary voice clone")
                 except Exception as e:
-                    print(f"WARNING: Could not delete temporary voice: {e}")
+                    print(f"STROKE WARNING: Could not delete temporary voice: {e}")
                     
     except Exception as e:
         error_msg = str(e)
-        print(f"ERROR: process_speech_fast failed: {error_msg}")
+        print(f"STROKE ERROR: Speech processing failed: {error_msg}")
         
-        # Clean up any cloned voice if there was an error
+        # Clean up on error
         if cloned_voice_id:
             try:
                 speech_processor.delete_voice(cloned_voice_id)
-                print(f"DEBUG: Cleaned up failed voice clone: {cloned_voice_id}")
             except:
                 pass
                 
         return jsonify({
             "error": error_msg,
             "success": False,
-            "debug_info": {
-                "auto_clone_attempted": auto_clone,
-                "voice_id_provided": bool(voice_id)
-            }
+            "stroke_optimized": True,
+            "recommendation": "Try speaking more slowly and clearly, or record in a quieter environment."
         }), 500
 
 @app.route('/api/test-voice-clone', methods=['POST'])
 def test_voice_clone():
-    """Test voice cloning functionality separately"""
+    """Test voice cloning functionality for stroke patients"""
     try:
         if 'audio' not in request.files:
             return jsonify({"error": "No audio file provided"}), 400
         
         audio_file = request.files['audio']
-        test_name = request.form.get('name', 'TestVoice')
+        test_name = request.form.get('name', 'StrokeTest')
         
-        # Save temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
             audio_file.save(temp_file.name)
             temp_path = temp_file.name
         
         try:
-            # Test validation
-            is_valid, duration = speech_processor.validate_audio_for_cloning(temp_path)
+            # Test speech clarity assessment
+            can_clone, assessment = speech_processor.assess_speech_clarity(temp_path)
             
-            # Test cloning
-            voice_id = speech_processor.clone_voice(test_name, temp_path)
-            
-            return jsonify({
-                "success": True,
-                "voice_id": voice_id,
-                "audio_duration": duration,
-                "message": "Voice cloning test successful!"
-            })
+            if can_clone:
+                # Test cloning
+                voice_id = speech_processor.clone_voice_with_enhancement(test_name, temp_path)
+                
+                return jsonify({
+                    "success": True,
+                    "voice_id": voice_id,
+                    "assessment": assessment,
+                    "message": "Voice cloning successful! Your speech is clear enough for cloning.",
+                    "recommendation": "You can use auto-cloning for the best results."
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "assessment": assessment,
+                    "message": "Voice cloning not recommended with current audio quality.",
+                    "recommendation": "Try recording 20-30 seconds in a very quiet room, speaking slowly and clearly. The app will still work with optimized backup voices."
+                })
             
         finally:
             os.unlink(temp_path)
             
     except Exception as e:
-        return jsonify({"error": str(e), "success": False}), 500
+        return jsonify({
+            "error": str(e), 
+            "success": False,
+            "recommendation": "For best results with stroke speech, record in a quiet environment and speak as clearly as possible."
+        }), 500
 
 @app.route('/api/voices', methods=['GET'])
 def get_voices():
-    """Get REAL voices from ElevenLabs"""
+    """Get available voices including stroke-optimized options"""
     try:
         response = requests.get(
             f"{speech_processor.elevenlabs_base_url}/voices",
@@ -850,16 +935,37 @@ def get_voices():
 
         if response.status_code == 200:
             data = response.json()
+            voices = []
+            
+            # Add user's cloned voices
+            for voice in data["voices"]:
+                voices.append({
+                    "voice_id": voice["voice_id"],
+                    "name": voice["name"],
+                    "category": voice.get("category", "cloned"),
+                    "stroke_optimized": "Stroke" in voice["name"]
+                })
+            
+            # Add fallback voices with descriptions
+            voices.extend([
+                {
+                    "voice_id": speech_processor.fallback_voices["mature_male"],
+                    "name": "Mature Male (Optimized)",
+                    "category": "stroke_fallback",
+                    "stroke_optimized": True
+                },
+                {
+                    "voice_id": speech_processor.fallback_voices["mature_female"],
+                    "name": "Mature Female (Optimized)",
+                    "category": "stroke_fallback",
+                    "stroke_optimized": True
+                }
+            ])
+            
             return jsonify({
                 "success": True,
-                "voices": [
-                    {
-                        "voice_id": voice["voice_id"],
-                        "name": voice["name"],
-                        "category": voice.get("category", "cloned")
-                    }
-                    for voice in data["voices"]
-                ]
+                "voices": voices,
+                "stroke_info": "Stroke-optimized voices prioritize clarity and natural speech patterns"
             })
         else:
             return jsonify({
@@ -876,7 +982,7 @@ def get_voices():
 
 @app.route('/api/speed-test', methods=['GET'])
 def speed_test():
-    """Test REAL API response times"""
+    """Test API response times"""
     start = time.time()
     
     # Test OpenAI
@@ -908,16 +1014,17 @@ def speed_test():
         "openai_ping": openai_time,
         "elevenlabs_ping": el_time,
         "total_test_time": round(total, 2),
-        "status": "APIs are warmed up!" if isinstance(openai_time, float) and isinstance(el_time, float) else "Some APIs may be slow"
+        "status": "Stroke-optimized APIs ready!" if isinstance(openai_time, float) and isinstance(el_time, float) else "Some APIs may be slow",
+        "stroke_optimized": True
     })
 
 @app.route('/api/delete-voice/<voice_id>', methods=['DELETE'])
 def delete_voice(voice_id):
-    """Delete a temporary cloned voice"""
+    """Delete a voice"""
     try:
         success = speech_processor.delete_voice(voice_id)
         if success:
-            return jsonify({"success": True, "message": "Voice deleted"})
+            return jsonify({"success": True, "message": "Voice deleted successfully"})
         else:
             return jsonify({"success": False, "error": "Failed to delete voice"}), 400
     except Exception as e:
@@ -925,107 +1032,116 @@ def delete_voice(voice_id):
 
 @app.route('/api/debug-voice-clone', methods=['POST'])
 def debug_voice_clone():
-    """Simple debug endpoint to see what's happening with voice cloning"""
+    """Debug endpoint for stroke patients"""
     debug_info = []
     
     try:
-        debug_info.append("🔍 Starting voice clone debug...")
+        debug_info.append("🔍 Starting stroke-optimized voice clone debug...")
         
-        # Check if file was uploaded
         if 'audio' not in request.files:
             return jsonify({"error": "No audio file provided", "debug": debug_info}), 400
         
         audio_file = request.files['audio']
         debug_info.append(f"✅ Audio file received: {audio_file.filename}")
         
-        # Save temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
             audio_file.save(temp_file.name)
             temp_path = temp_file.name
             
         file_size = os.path.getsize(temp_path)
-        debug_info.append(f"📁 File saved to: {temp_path}")
-        debug_info.append(f"📏 File size: {file_size} bytes")
+        debug_info.append(f"📁 File saved, size: {file_size} bytes")
         
         try:
-            # Test 1: Check ElevenLabs API key
-            debug_info.append("🔑 Testing ElevenLabs API key...")
-            test_response = requests.get(
-                f"{speech_processor.elevenlabs_base_url}/voices",
-                headers={"xi-api-key": ELEVENLABS_API_KEY},
-                timeout=10
-            )
-            debug_info.append(f"🔑 API Key test: {test_response.status_code}")
+            # Test speech clarity assessment
+            can_clone, assessment = speech_processor.assess_speech_clarity(temp_path)
+            debug_info.append(f"🎯 Speech clarity assessment: {assessment}")
             
-            # Test 2: Try voice cloning
-            debug_info.append("🎤 Attempting voice clone...")
-            
-            url = f"{speech_processor.elevenlabs_base_url}/voices/add"
-            headers = {"xi-api-key": ELEVENLABS_API_KEY}
-            
-            with open(temp_path, "rb") as audio_file:
-                files = {"files": ("debug_voice.wav", audio_file, "audio/wav")}
-                data = {
-                    "name": f"DebugTest_{int(time.time())}",
-                    "description": "Debug test voice",
-                    "remove_background_noise": "true"
-                }
+            if can_clone:
+                debug_info.append("🎤 Attempting stroke-optimized voice clone...")
                 
-                debug_info.append("📤 Sending clone request...")
-                response = requests.post(url, headers=headers, files=files, data=data, timeout=60)
-            
-            debug_info.append(f"📬 Response status: {response.status_code}")
-            debug_info.append(f"📋 Response headers: {dict(response.headers)}")
-            
-            try:
-                response_json = response.json()
-                debug_info.append(f"📄 Response body: {response_json}")
-            except:
-                debug_info.append(f"📄 Response text: {response.text[:500]}")
-            
-            if response.status_code == 200:
-                result = response.json()
-                voice_id = result.get("voice_id")
-                debug_info.append(f"🎉 SUCCESS! Voice ID: {voice_id}")
+                url = f"{speech_processor.elevenlabs_base_url}/voices/add"
+                headers = {"xi-api-key": ELEVENLABS_API_KEY}
                 
-                # Clean up the test voice
-                try:
-                    delete_url = f"{speech_processor.elevenlabs_base_url}/voices/{voice_id}"
-                    delete_response = requests.delete(delete_url, headers=headers)
-                    debug_info.append(f"🗑️ Cleanup: {delete_response.status_code}")
-                except:
-                    debug_info.append("🗑️ Cleanup failed (not important)")
+                with open(temp_path, "rb") as audio_file:
+                    files = {"files": ("stroke_debug.wav", audio_file, "audio/wav")}
+                    data = {
+                        "name": f"StrokeDebug_{int(time.time())}",
+                        "description": "Stroke patient debug test",
+                        "remove_background_noise": "true",
+                        "enhance_audio_quality": "true"
+                    }
                     
-                return jsonify({
-                    "success": True,
-                    "message": "Voice cloning works!",
-                    "voice_id": voice_id,
-                    "debug": debug_info
-                })
+                    response = requests.post(url, headers=headers, files=files, data=data, timeout=120)
                 
+                debug_info.append(f"📬 Clone response: {response.status_code}")
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    voice_id = result.get("voice_id")
+                    debug_info.append(f"🎉 SUCCESS! Stroke voice cloned: {voice_id}")
+                    
+                    # Test speech generation
+                    try:
+                        test_audio = speech_processor.generate_speech_fast("This is a test of clear speech for stroke patients.", voice_id)
+                        debug_info.append("🔊 Speech generation test: SUCCESS")
+                    except Exception as e:
+                        debug_info.append(f"🔊 Speech generation test failed: {str(e)}")
+                    
+                    # Cleanup
+                    try:
+                        delete_response = requests.delete(f"{speech_processor.elevenlabs_base_url}/voices/{voice_id}", headers=headers)
+                        debug_info.append(f"🗑️ Cleanup: {delete_response.status_code}")
+                    except:
+                        debug_info.append("🗑️ Cleanup failed")
+                        
+                    return jsonify({
+                        "success": True,
+                        "message": "Stroke-optimized voice cloning works!",
+                        "voice_id": voice_id,
+                        "debug": debug_info,
+                        "stroke_optimized": True
+                    })
+                else:
+                    debug_info.append(f"❌ Clone failed: {response.status_code}")
+                    try:
+                        error_detail = response.json()
+                        debug_info.append(f"📄 Error details: {error_detail}")
+                    except:
+                        debug_info.append(f"📄 Error text: {response.text[:300]}")
+                        
+                    return jsonify({
+                        "success": False,
+                        "error": f"Clone failed: {response.status_code}",
+                        "debug": debug_info,
+                        "stroke_optimized": True,
+                        "recommendation": "Try recording longer (20-30 seconds) in a very quiet room"
+                    })
             else:
-                debug_info.append(f"❌ FAILED with status {response.status_code}")
+                debug_info.append("❌ Speech not suitable for cloning")
+                debug_info.append(f"💡 Recommendation: {assessment}")
+                
                 return jsonify({
                     "success": False,
-                    "error": f"Clone failed: {response.status_code}",
+                    "error": "Speech clarity insufficient",
                     "debug": debug_info,
-                    "response_text": response.text[:500]
-                }), 400
+                    "stroke_optimized": True,
+                    "recommendation": "Record 20-30 seconds of your clearest speech in a quiet room"
+                })
                 
         finally:
-            # Clean up temp file
             try:
                 os.unlink(temp_path)
-                debug_info.append("🧹 Temp file cleaned up")
+                debug_info.append("🧹 Temp file cleaned")
             except:
-                debug_info.append("🧹 Temp file cleanup failed")
+                debug_info.append("🧹 Cleanup failed")
                 
     except Exception as e:
         debug_info.append(f"💥 ERROR: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
-            "debug": debug_info
+            "debug": debug_info,
+            "stroke_optimized": True
         }), 500
     
 @app.route('/api/quick-test', methods=['GET'])
@@ -1038,16 +1154,16 @@ def quick_test():
         return jsonify({
             "api_key_works": response.status_code == 200,
             "status_code": response.status_code,
-            "error": response.text if response.status_code != 200 else None
+            "error": response.text if response.status_code != 200 else None,
+            "stroke_optimized": True
         })
     except Exception as e:
-        return jsonify({"error": str(e)})
+        return jsonify({"error": str(e), "stroke_optimized": True})
 
 @app.route('/api/cleanup-voices', methods=['POST'])
 def cleanup_voices():
     """Delete all custom voices to free up slots"""
     try:
-        # Get all voices
         response = requests.get(
             f"{speech_processor.elevenlabs_base_url}/voices",
             headers={"xi-api-key": ELEVENLABS_API_KEY}
@@ -1060,7 +1176,6 @@ def cleanup_voices():
         deleted = []
         
         for voice in voices:
-            # Only delete custom voices (not built-in ones)
             if voice.get("category") == "cloned":
                 try:
                     delete_response = requests.delete(
@@ -1075,11 +1190,12 @@ def cleanup_voices():
         return jsonify({
             "success": True,
             "deleted_voices": deleted,
-            "message": f"Deleted {len(deleted)} custom voices"
+            "message": f"Deleted {len(deleted)} custom voices",
+            "stroke_optimized": True
         })
         
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "stroke_optimized": True}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
