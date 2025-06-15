@@ -392,7 +392,6 @@ class OptimizedSpeechProcessor:
         """Validate audio file is suitable for voice cloning"""
         try:
             import wave
-            import audioop
             
             file_size = os.path.getsize(file_path)
             print(f"DEBUG: Audio file size: {file_size} bytes")
@@ -1023,6 +1022,22 @@ def debug_voice_clone():
             "error": str(e),
             "debug": debug_info
         }), 500
+    
+@app.route('/api/quick-test', methods=['GET'])
+def quick_test():
+    try:
+        response = requests.get(
+            f"{speech_processor.elevenlabs_base_url}/voices",
+            headers={"xi-api-key": ELEVENLABS_API_KEY}
+        )
+        return jsonify({
+            "api_key_works": response.status_code == 200,
+            "status_code": response.status_code,
+            "error": response.text if response.status_code != 200 else None
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
