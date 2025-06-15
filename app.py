@@ -579,7 +579,7 @@ class StrokeOptimizedSpeechProcessor:
             return "en"
 
     def enhance_text_for_stroke_patients(self, text: str) -> str:
-        """Enhanced text processing specifically for stroke speech patterns - MULTILINGUAL"""
+        """Enhanced text processing for stroke patients - creates SMOOTH, CLEAR, FLUENT speech"""
         try:
             # Check for repetitive/garbled text first
             if self.is_repetitive_text(text):
@@ -614,47 +614,47 @@ class StrokeOptimizedSpeechProcessor:
                 detected_language = "en"
                 print(f"STROKE OVERRIDE: Text contains English words, forcing English processing")
             
-            # Language-specific enhancement prompts
+            # SMOOTH SPEECH ENHANCEMENT - Remove all pauses, gaps, hesitations
             if detected_language == "en":
-                system_prompt = "You are helping a stroke patient communicate more clearly in English. Fix unclear words but keep the same meaning and style. Do not translate or change language."
-                user_prompt = f"""Fix unclear or mispronounced words in this English text from a stroke patient. Keep the same meaning and natural style. Only output the corrected text, nothing else.
+                system_prompt = "You are creating smooth, fluent, clear speech for a stroke patient. Transform slurred, hesitant speech into perfect fluent speech with NO pauses, gaps, or stutters."
+                user_prompt = f"""Transform this slurred/unclear speech from a stroke patient into smooth, fluent, crystal-clear speech. Remove ALL pauses, gaps, hesitations, and stutters. Make it flow perfectly while keeping the same meaning.
 
-Text: {text}
+Slurred input: {text}
 
-Corrected:"""
+Smooth fluent speech:"""
                 
             elif detected_language == "ne":
-                system_prompt = "तपाईं स्ट्रोकका बिरामीलाई नेपालीमा स्पष्ट रूपमा कुरा गर्न मद्दत गर्दै हुनुहुन्छ। अस्पष्ट शब्दहरू मात्र सुधार्नुहोस्।"
-                user_prompt = f"""नेपाली भाषामा स्ट्रोक बिरामीको यो वाक्यमा अस्पष्ट शब्दहरू मात्र सुधार्नुहोस्। अर्थ र शैली उस्तै राख्नुहोस्। केवल सुधारिएको पाठ मात्र दिनुहोस्।
+                system_prompt = "तपाईं स्ट्रोकका बिरामीको अस्पष्ट बोलीलाई चिल्लो र स्पष्ट बनाउँदै हुनुहुन्छ। सबै रोकावट र अस्पष्टता हटाउनुहोस्।"
+                user_prompt = f"""स्ट्रोक बिरामीको यो अस्पष्ट बोलीलाई एकदमै चिल्लो, स्पष्ट र प्रवाहमान बनाउनुहोस्। सबै रोकावट, अड्किनी र अस्पष्टता हटाएर पूर्ण रूपमा स्पष्ट बनाउनुहोस्।
 
-पाठ: {text}
+अस्पष्ट बोली: {text}
 
-सुधारिएको:"""
+चिल्लो स्पष्ट बोली:"""
 
             elif detected_language == "hi":
-                system_prompt = "आप स्ट्रोक के मरीज़ को हिंदी में स्पष्ट बोलने में मदद कर रहे हैं। केवल अस्पष्ट शब्दों को ठीक करें।"
-                user_prompt = f"""स्ट्रोक मरीज़ के इस हिंदी वाक्य में केवल अस्पष्ट शब्दों को ठीक करें। अर्थ और शैली वही रखें। केवल सुधारा हुआ टेक्स्ट दें।
+                system_prompt = "आप स्ट्रोक मरीज़ की अस्पष्ट बोली को चिकनी और स्पष्ट बना रहे हैं। सभी रुकावटें और अस्पष्टता हटाएं।"
+                user_prompt = f"""स्ट्रोक मरीज़ की इस अस्पष्ट बोली को बिल्कुल चिकनी, स्पष्ट और प्रवाहमान बनाएं। सभी रुकावटें, हकलाहट और अस्पष्टता हटाकर पूरी तरह स्पष्ट बनाएं।
 
-टेक्स्ट: {text}
+अस्पष्ट बोली: {text}
 
-सुधारा गया:"""
+चिकनी स्पष्ट बोली:"""
 
             elif detected_language == "si":
-                system_prompt = "ඔබ ආඝාත රෝගියෙකුට සිංහලෙන් පැහැදිලිව කතා කිරීමට උදව් කරයි. අපැහැදිලි වචන පමණක් නිවැරදි කරන්න."
-                user_prompt = f"""ආඝාත රෝගියෙකුගේ මෙම සිංහල වාක්‍යයේ අපැහැදිලි වචන පමණක් නිවැරදි කරන්න. අර්ථය සහ විලාසය එසේම තබන්න.
+                system_prompt = "ඔබ ආඝාත රෝගියෙකුගේ අපැහැදිලි කථනය පැහැදිලි හා සුමට බවට පත් කරයි. සියලු බාධක සහ අපැහැදිලිකම් ඉවත් කරන්න."
+                user_prompt = f"""ආඝාත රෝගියෙකුගේ මෙම අපැහැදිලි කථනය සම්පූර්ණයෙන්ම සුමට, පැහැදිලි සහ ගලා යන ලෙස කරන්න. සියලු බාධක, පැකිළීම් සහ අපැහැදිලිකම් ඉවත් කරන්න.
 
-පාඨය: {text}
+අපැහැදිලි කථනය: {text}
 
-නිවැරදි කළ:"""
+සුමට පැහැදිලි කථනය:"""
 
             else:
-                # Conservative approach for other/mixed languages
-                system_prompt = "Fix only obvious transcription errors. Do not translate. Keep the same language and meaning."
-                user_prompt = f"""Fix only obvious transcription errors in this text. Do not translate to another language. Keep original meaning and language.
+                # Smooth speech for other/mixed languages
+                system_prompt = "Transform unclear, hesitant speech into smooth, fluent, crystal-clear speech. Remove all pauses, gaps, and stutters while keeping the same language and meaning."
+                user_prompt = f"""Transform this unclear speech into perfectly smooth, fluent speech. Remove ALL pauses, gaps, hesitations, and stutters. Make it flow perfectly while keeping the original language and meaning.
 
-Text: {text}
+Unclear speech: {text}
 
-Fixed:"""
+Smooth fluent speech:"""
             
             # Make the API call
             response = openai.ChatCompletion.create(
@@ -831,12 +831,12 @@ Fixed:"""
             raise Exception(f"Speech recognition failed: {str(e)}")
     
     def generate_speech_fast(self, text: str, voice_id: str = None) -> bytes:
-        """REAL ElevenLabs speech generation optimized for clarity"""
+        """REAL ElevenLabs speech generation optimized for SMOOTH, CLEAR output"""
         try:
             if not voice_id:
                 voice_id = self.fallback_voices["mature_male"]
             
-            print(f"STROKE DEBUG: Generating clear speech with voice ID: {voice_id}")
+            print(f"STROKE DEBUG: Generating smooth, clear speech with voice ID: {voice_id}")
             
             url = f"{self.elevenlabs_base_url}/text-to-speech/{voice_id}"
             
@@ -846,28 +846,32 @@ Fixed:"""
                 "xi-api-key": ELEVENLABS_API_KEY
             }
             
-            # Optimized settings for stroke patients (prioritize clarity)
+            # OPTIMIZED SETTINGS FOR SMOOTH, FLUENT SPEECH (no gaps or pauses)
             data = {
                 "text": text,
                 "model_id": "eleven_multilingual_v2",
                 "voice_settings": {
-                    "stability": 0.7,  # Higher stability for clarity
-                    "similarity_boost": 0.8,
-                    "style": 0.4,  # Lower style to avoid artifacts
+                    "stability": 0.85,  # Very high stability for smooth speech
+                    "similarity_boost": 0.9,  # High similarity to original voice
+                    "style": 0.15,  # Low style to avoid dramatic pauses
                     "use_speaker_boost": True
                 },
+                # Advanced settings for smooth output
                 "pronunciation_dictionary_locators": [],
                 "seed": None,
                 "previous_text": None,
                 "next_text": None,
                 "previous_request_ids": [],
-                "next_request_ids": []
+                "next_request_ids": [],
+                # Additional settings for fluency
+                "apply_text_normalization": "auto",
+                "optimize_streaming_latency": 0  # Prioritize quality over speed
             }
             
-            response = requests.post(url, json=data, headers=headers, timeout=20)
+            response = requests.post(url, json=data, headers=headers, timeout=30)
             
             if response.status_code == 200:
-                print(f"STROKE SUCCESS: Generated clear speech for stroke patient")
+                print(f"STROKE SUCCESS: Generated smooth, fluent speech for stroke patient")
                 return response.content
             else:
                 print(f"STROKE ERROR: Speech generation failed: {response.status_code} - {response.text}")
