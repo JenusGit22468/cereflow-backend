@@ -442,31 +442,169 @@ class StrokeOptimizedSpeechProcessor:
             print(f"STROKE ERROR: Audio assessment failed: {e}")
             return False, f"Audio assessment failed: {e}"
     
-    def enhance_text_for_stroke_patients(self, text: str) -> str:
-        """Enhanced text processing specifically for stroke speech patterns"""
+    def detect_language(self, text: str) -> str:
+        """Detect the language of the input text"""
         try:
-            # Stroke-specific enhancement prompt
-            prompt = f"""You are helping a stroke patient communicate more clearly. The following text was transcribed from speech that may be slurred or unclear due to stroke-related speech difficulties. 
-
-Please improve the text by:
-1. Fixing unclear or garbled words while preserving the original meaning
-2. Keeping the same language and natural speaking style
-3. NOT changing the core message or intent
-4. Making the speech sound more fluent and clear
-5. Maintaining the person's personality and tone
-
-Original speech: "{text}"
-
-Clear, improved version:"""
+            # Simple language detection based on character patterns
+            import re
             
+            # Check for common language patterns
+            if re.search(r'[අ-ෆ]', text):  # Sinhala
+                return "Sinhala"
+            elif re.search(r'[ग-ॿ]', text):  # Nepali (Devanagari script)
+                # Try to distinguish Nepali from Hindi by common words
+                if any(word in text for word in ['छ', 'छु', 'छन्', 'हुन्छ', 'गर्छ', 'भन्छ', 'आउँछ']):
+                    return "Nepali"
+                elif any(word in text for word in ['है', 'हैं', 'करता', 'करते', 'होता', 'होते']):
+                    return "Hindi"
+                else:
+                    return "Nepali/Hindi"  # Could be either
+            elif re.search(r'[अ-ॿ]', text):  # Hindi/Devanagari (broader range)
+                return "Hindi"
+            elif re.search(r'[ก-๛]', text):  # Thai
+                return "Thai"
+            elif re.search(r'[ა-ჿ]', text):  # Georgian
+                return "Georgian"
+            elif re.search(r'[አ-ፚ]', text):  # Amharic
+                return "Amharic"
+            elif re.search(r'[ا-ي]', text):  # Arabic
+                return "Arabic"
+            elif re.search(r'[一-龯]', text):  # Chinese
+                return "Chinese"
+            elif re.search(r'[ひらがなカタカナ]|[一-龯]', text):  # Japanese
+                return "Japanese"
+            elif re.search(r'[가-힣]', text):  # Korean
+                return "Korean"
+            elif re.search(r'[а-я]', text, re.IGNORECASE):  # Russian/Cyrillic
+                return "Russian"
+            elif re.search(r'[α-ω]', text, re.IGNORECASE):  # Greek
+                return "Greek"
+            elif re.search(r'[а-щъьюя]', text, re.IGNORECASE):  # Bulgarian
+                return "Bulgarian"
+            elif re.search(r'[ć-ž]', text, re.IGNORECASE):  # Croatian/Serbian
+                return "Croatian"
+            elif re.search(r'[à-ÿ]', text, re.IGNORECASE):  # French/Spanish/etc
+                # Try to distinguish between Romance languages
+                if any(word in text.lower() for word in ['que', 'de', 'la', 'el', 'en', 'es', 'para']):
+                    return "Spanish"
+                elif any(word in text.lower() for word in ['que', 'de', 'le', 'la', 'et', 'en', 'pour']):
+                    return "French"
+                elif any(word in text.lower() for word in ['che', 'di', 'la', 'il', 'e', 'in', 'per']):
+                    return "Italian"
+                else:
+                    return "Romance Language"
+            elif re.search(r'[a-zA-Z]', text):  # English or other Latin script
+                return "English"
+            else:
+                return "Unknown"
+                
+        except Exception as e:
+            print(f"Language detection failed: {e}")
+            return "Unknown"
+
+    def enhance_text_for_stroke_patients(self, text: str) -> str:
+        """Enhanced text processing specifically for stroke speech patterns - MULTILINGUAL"""
+        try:
+            # First detect the language
+            detected_language = self.detect_language(text)
+            print(f"STROKE DEBUG: Detected language: {detected_language}")
+            
+            # Check if the text looks like garbled/repeated characters (common transcription error)
+            if len(set(text.replace(' ', ''))) <= 3 and len(text) > 10:
+                print("STROKE WARNING: Text appears to be garbled transcription, returning as-is")
+                return text
+            
+            # Language-specific enhancement prompts
+            if detected_language == "English":
+                system_prompt = "You are helping a stroke patient communicate more clearly in English. Fix unclear words while keeping the same meaning and natural style."
+                user_prompt = f"""Fix any unclear or garbled words in this English speech from a stroke patient. Keep the same meaning, style, and personality. Only fix obvious errors:
+
+Original: "{text}"
+
+Fixed English:"""
+                
+            elif detected_language == "Sinhala":
+                system_prompt = "You are helping a stroke patient communicate more clearly in Sinhala. Fix unclear words while keeping the same meaning and natural style."
+                user_prompt = f"""සිංහල භාෂාවෙන් කතා කරන ආ​ඝාත රෝගියෙකුට පැහැදිලිව සන්නිවේදනය කිරීමට උදව් කරන්න. අර්ථය සහ ස්වාභාවික විලාසය එසේම තබා ගෙන අපැහැදිලි වචන නිවැරදි කරන්න:
+
+මුල් කථනය: "{text}"
+
+නිවැරදි කළ සිංහල:"""
+
+            elif detected_language == "Nepali" or detected_language == "Nepali/Hindi":
+                system_prompt = "You are helping a stroke patient communicate more clearly in Nepali. Fix unclear words while keeping the same meaning and natural style."
+                user_prompt = f"""नेपाली भाषामा स्ट्रोकका बिरामीलाई स्पष्ट रूपमा सञ्चार गर्न मद्दत गर्नुहोस्। अर्थ र प्राकृतिक शैली उस्तै राखेर अस्पष्ट शब्दहरू सुधार गर्नुहोस्:
+
+मूल भाषण: "{text}"
+
+सुधारिएको नेपाली:"""
+
+            elif detected_language in ["Hindi", "Devanagari"]:
+                system_prompt = "You are helping a stroke patient communicate more clearly in Hindi. Fix unclear words while keeping the same meaning and natural style."
+                user_prompt = f"""स्ट्रोक के मरीज़ को हिंदी में स्पष्ट रूप से संवाद करने में मदद करें। अर्थ और प्राकृतिक शैली को बनाए रखते हुए अस्पष्ट शब्दों को ठीक करें:
+
+मूल भाषण: "{text}"
+
+सुधारा गया हिंदी:"""
+
+            elif detected_language == "Arabic":
+                system_prompt = "You are helping a stroke patient communicate more clearly in Arabic. Fix unclear words while keeping the same meaning and natural style."
+                user_prompt = f"""ساعد مريض السكتة الدماغية على التواصل بوضوح باللغة العربية. اصلح الكلمات غير الواضحة مع الحفاظ على نفس المعنى والأسلوب الطبيعي:
+
+الكلام الأصلي: "{text}"
+
+العربية المحسنة:"""
+
+            elif detected_language == "Chinese":
+                system_prompt = "You are helping a stroke patient communicate more clearly in Chinese. Fix unclear words while keeping the same meaning and natural style."
+                user_prompt = f"""帮助中风患者用中文清楚地交流。修正不清楚的词语，同时保持相同的意思和自然风格：
+
+原始语音："{text}"
+
+改进的中文："""
+
+            elif detected_language == "Spanish":
+                system_prompt = "You are helping a stroke patient communicate more clearly in Spanish. Fix unclear words while keeping the same meaning and natural style."
+                user_prompt = f"""Ayuda a un paciente con accidente cerebrovascular a comunicarse claramente en español. Corrige palabras poco claras manteniendo el mismo significado y estilo natural:
+
+Discurso original: "{text}"
+
+Español mejorado:"""
+
+            elif detected_language == "French":
+                system_prompt = "You are helping a stroke patient communicate more clearly in French. Fix unclear words while keeping the same meaning and natural style."
+                user_prompt = f"""Aidez un patient victime d'AVC à communiquer clairement en français. Corrigez les mots peu clairs en gardant le même sens et le style naturel:
+
+Discours original: "{text}"
+
+Français amélioré:"""
+
+            elif detected_language == "Russian":
+                system_prompt = "You are helping a stroke patient communicate more clearly in Russian. Fix unclear words while keeping the same meaning and natural style."
+                user_prompt = f"""Помогите пациенту с инсультом четко общаться на русском языке. Исправьте неясные слова, сохраняя тот же смысл и естественный стиль:
+
+Оригинальная речь: "{text}"
+
+Улучшенный русский:"""
+
+            else:
+                # For unknown/other languages, use a generic multilingual approach
+                system_prompt = f"You are helping a stroke patient communicate more clearly in {detected_language}. Fix unclear words while keeping the same meaning, language, and natural style. NEVER translate to a different language."
+                user_prompt = f"""Fix any unclear or garbled words in this speech from a stroke patient. Keep the EXACT SAME LANGUAGE ({detected_language}), meaning, and style. Only fix obvious transcription errors:
+
+Original: "{text}"
+
+Fixed in same language:"""
+            
+            # Make the API call
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are an AI assistant specialized in helping stroke patients communicate more clearly. Your job is to improve unclear speech while preserving the person's original intent, personality, and language. Never translate to a different language."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=150,  # Increased for stroke patients
-                temperature=0.2,  # Slightly higher for more natural responses
+                max_tokens=200,  # Increased for longer languages
+                temperature=0.1,  # Lower temperature for more consistent results
                 top_p=1,
                 frequency_penalty=0,
                 presence_penalty=0
@@ -477,21 +615,35 @@ Clear, improved version:"""
             # Remove any quotes that AI might add
             if enhanced_text.startswith('"') and enhanced_text.endswith('"'):
                 enhanced_text = enhanced_text[1:-1]
+            if enhanced_text.startswith("'") and enhanced_text.endswith("'"):
+                enhanced_text = enhanced_text[1:-1]
             
-            # Safety check - if AI changed too much, return original
-            original_words = text.lower().split()
-            enhanced_words = enhanced_text.lower().split()
+            # Language-specific validation
+            if detected_language == "English":
+                # For English, check if response makes sense
+                if len(enhanced_text.split()) < 1:
+                    return text
+            else:
+                # For non-English, be more conservative
+                # Check if the enhanced text has similar character patterns
+                original_chars = set(text.replace(' ', ''))
+                enhanced_chars = set(enhanced_text.replace(' ', ''))
+                
+                # If the character sets are completely different, probably translated
+                if len(original_chars & enhanced_chars) == 0 and len(original_chars) > 2:
+                    print(f"STROKE WARNING: Enhanced text seems to be in different language, returning original")
+                    return text
             
-            # More lenient for stroke patients - allow more changes for clarity
-            if len(enhanced_words) == 0 or len(set(original_words) & set(enhanced_words)) / len(original_words) < 0.5:
-                print("STROKE WARNING: AI changed too much, returning original")
+            # Length check - if enhanced is way longer or shorter, might be wrong
+            if len(enhanced_text) > len(text) * 3 or len(enhanced_text) < len(text) * 0.3:
+                print(f"STROKE WARNING: Enhanced text length very different, returning original")
                 return text
                 
-            print(f"STROKE SUCCESS: Enhanced '{text}' to '{enhanced_text}'")
+            print(f"STROKE SUCCESS ({detected_language}): Enhanced '{text}' to '{enhanced_text}'")
             return enhanced_text
             
         except Exception as e:
-            print(f"STROKE ERROR: Text enhancement failed: {str(e)}")
+            print(f"STROKE ERROR: Multilingual text enhancement failed: {str(e)}")
             return text
     
     def clone_voice_with_enhancement(self, name: str, audio_file_path: str) -> str:
