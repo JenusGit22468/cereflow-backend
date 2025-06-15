@@ -467,10 +467,10 @@ Fixed (same language):"""
                 "text": text,
                 "model_id": "eleven_multilingual_v2",
                 "voice_settings": {
-                    "stability": 0.7,
-                    "similarity_boost": 0.9,
-                    "style": 0.1,
-                    "use_speaker_boost": False
+                    "stability": 0.4,
+                    "similarity_boost": 0.85,
+                    "style": 0.6,
+                    "use_speaker_boost": True
                 }
             }
             
