@@ -368,6 +368,7 @@ class StrokeOptimizedSpeechProcessor:
             "young_male": "CYw3kZ02Hs0563khs1Fj",      # Younger male voice
             "young_female": "pNInz6obpgDQGcFmaJgB"     # Younger female voice
         }
+        self.detected_language = "en"  # Default language
         self._warmup()
         
     def _warmup(self):
@@ -394,6 +395,55 @@ class StrokeOptimizedSpeechProcessor:
                         headers={"xi-api-key": ELEVENLABS_API_KEY}, timeout=5)
         except:
             pass
+    
+    def is_language_well_supported(self, language_code):
+        """Check if language is well supported by ElevenLabs"""
+        # Primary well-supported languages
+        well_supported = {
+            "en", "es", "fr", "de", "it", "pt", "ru", "zh", "ja", "ko", 
+            "hi", "ar", "nl", "pl", "sv", "da", "no", "fi", "ne", "si"
+        }
+        return language_code in well_supported
+    
+    def get_best_model_for_language(self, language_code):
+        """Select the best ElevenLabs model based on language support"""
+        
+        # Eleven v3 supports 70+ languages (highest quality but newer)
+        v3_languages = {
+            "afr", "ara", "hye", "asm", "aze", "bel", "ben", "bos", "bul", "cat", 
+            "ces", "cmn", "hrv", "dan", "nld", "eng", "est", "fin", "fra", "glg",
+            "kat", "deu", "ell", "guj", "heb", "hin", "hun", "isl", "ind", "gle",
+            "ita", "jpn", "kan", "kaz", "kor", "lav", "lit", "ltz", "mkd", "msa",
+            "mal", "mlt", "mar", "nep", "nor", "ory", "fas", "pol", "por", "pan",
+            "ron", "rus", "sin", "slk", "slv", "spa", "swa", "swe", "tam", "tel",
+            "tha", "tur", "ukr", "urd", "uzb", "vie", "cym", "xho", "yid", "yor",
+            "zul", "en", "ne", "si", "hi", "ar", "zh", "ja", "ko", "th", "de", 
+            "fr", "es", "it", "pt", "ru", "pl", "nl", "sv", "da", "no", "fi"
+        }
+        
+        # Multilingual v2 languages (29+ languages, most stable)
+        v2_languages = {
+            "en", "zh", "ja", "de", "hi", "fr", "ko", "pt", "it", "es", "id", 
+            "nl", "tr", "fil", "pl", "sv", "bg", "ro", "ar", "cs", "el", "fi",
+            "hr", "ms", "sk", "da", "ta", "uk", "ru", "ne", "si"
+        }
+        
+        # Flash v2.5 languages (32 languages, fastest)
+        flash_languages = v2_languages.union({"additional_flash_langs"})  # Flash has all v2 + more
+        
+        # Choose model based on language support and requirements
+        if language_code in v2_languages:
+            # Use Multilingual v2 for best stability and quality
+            return "eleven_multilingual_v2"
+        elif language_code in v3_languages:
+            # Use v3 for languages not in v2 (when available)
+            # Note: v3 might not be available for all users yet
+            return "eleven_multilingual_v2"  # Fallback to v2 for now
+        else:
+            # For unsupported languages, use multilingual v2 anyway
+            # It might still work reasonably well
+            print(f"STROKE WARNING: Language {language_code} not explicitly supported, using multilingual v2")
+            return "eleven_multilingual_v2"
     
     def assess_speech_clarity(self, file_path):
         """Assess if speech is clear enough for voice cloning"""
