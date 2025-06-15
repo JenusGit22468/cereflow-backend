@@ -915,6 +915,114 @@ def delete_voice(voice_id):
             return jsonify({"success": False, "error": "Failed to delete voice"}), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+    
+    # ADD THIS SIMPLE DEBUG ENDPOINT TO YOUR app.py FILE
+# Put it anywhere after your other routes
+
+@app.route('/api/debug-voice-clone', methods=['POST'])
+def debug_voice_clone():
+    """Simple debug endpoint to see what's happening with voice cloning"""
+    debug_info = []
+    
+    try:
+        debug_info.append("🔍 Starting voice clone debug...")
+        
+        # Check if file was uploaded
+        if 'audio' not in request.files:
+            return jsonify({"error": "No audio file provided", "debug": debug_info}), 400
+        
+        audio_file = request.files['audio']
+        debug_info.append(f"✅ Audio file received: {audio_file.filename}")
+        
+        # Save temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+            audio_file.save(temp_file.name)
+            temp_path = temp_file.name
+            
+        file_size = os.path.getsize(temp_path)
+        debug_info.append(f"📁 File saved to: {temp_path}")
+        debug_info.append(f"📏 File size: {file_size} bytes")
+        
+        try:
+            # Test 1: Check ElevenLabs API key
+            debug_info.append("🔑 Testing ElevenLabs API key...")
+            test_response = requests.get(
+                f"{speech_processor.elevenlabs_base_url}/voices",
+                headers={"xi-api-key": ELEVENLABS_API_KEY},
+                timeout=10
+            )
+            debug_info.append(f"🔑 API Key test: {test_response.status_code}")
+            
+            # Test 2: Try voice cloning
+            debug_info.append("🎤 Attempting voice clone...")
+            
+            url = f"{speech_processor.elevenlabs_base_url}/voices/add"
+            headers = {"xi-api-key": ELEVENLABS_API_KEY}
+            
+            with open(temp_path, "rb") as audio_file:
+                files = {"files": ("debug_voice.wav", audio_file, "audio/wav")}
+                data = {
+                    "name": f"DebugTest_{int(time.time())}",
+                    "description": "Debug test voice",
+                    "remove_background_noise": "true"
+                }
+                
+                debug_info.append("📤 Sending clone request...")
+                response = requests.post(url, headers=headers, files=files, data=data, timeout=60)
+            
+            debug_info.append(f"📬 Response status: {response.status_code}")
+            debug_info.append(f"📋 Response headers: {dict(response.headers)}")
+            
+            try:
+                response_json = response.json()
+                debug_info.append(f"📄 Response body: {response_json}")
+            except:
+                debug_info.append(f"📄 Response text: {response.text[:500]}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                voice_id = result.get("voice_id")
+                debug_info.append(f"🎉 SUCCESS! Voice ID: {voice_id}")
+                
+                # Clean up the test voice
+                try:
+                    delete_url = f"{speech_processor.elevenlabs_base_url}/voices/{voice_id}"
+                    delete_response = requests.delete(delete_url, headers=headers)
+                    debug_info.append(f"🗑️ Cleanup: {delete_response.status_code}")
+                except:
+                    debug_info.append("🗑️ Cleanup failed (not important)")
+                    
+                return jsonify({
+                    "success": True,
+                    "message": "Voice cloning works!",
+                    "voice_id": voice_id,
+                    "debug": debug_info
+                })
+                
+            else:
+                debug_info.append(f"❌ FAILED with status {response.status_code}")
+                return jsonify({
+                    "success": False,
+                    "error": f"Clone failed: {response.status_code}",
+                    "debug": debug_info,
+                    "response_text": response.text[:500]
+                }), 400
+                
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(temp_path)
+                debug_info.append("🧹 Temp file cleaned up")
+            except:
+                debug_info.append("🧹 Temp file cleanup failed")
+                
+    except Exception as e:
+        debug_info.append(f"💥 ERROR: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "debug": debug_info
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
