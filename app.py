@@ -489,6 +489,11 @@ Fixed (same language):"""
     def clone_voice(self, name: str, audio_file_path: str) -> str:
         """REAL ElevenLabs voice cloning"""
         try:
+            # DEBUG: Check file before cloning
+            file_size = os.path.getsize(audio_file_path)
+            print(f"DEBUG: Cloning file size: {file_size} bytes")
+            print(f"DEBUG: File path: {audio_file_path}")
+
             url = f"{self.elevenlabs_base_url}/voices/add"
             
             headers = {
@@ -497,7 +502,7 @@ Fixed (same language):"""
             
             with open(audio_file_path, "rb") as audio_file:
                 files = {
-                    "files": (os.path.basename(audio_file_path), audio_file, "audio/mpeg")
+                    "files": (os.path.basename(audio_file_path), audio_file, "audio/wav")
                 }
                 data = {
                     "name": name,
@@ -509,6 +514,7 @@ Fixed (same language):"""
             
             if response.status_code == 200:
                 result = response.json()
+                print(f"DEBUG: Full cloning response: {result}")
                 voice_id = result.get("voice_id")
                 if voice_id:
                     print(f"Voice cloned successfully: {voice_id}")
