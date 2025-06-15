@@ -666,7 +666,7 @@ def create_voice_profile():
 
 @app.route('/api/process-speech-fast', methods=['POST'])
 def process_speech_fast():
-    """IMPROVED speech processing with better auto-cloning"""
+    """IMPROVED speech processing with auto-cloning and IMMEDIATE deletion"""
     start_time = time.time()
     cloned_voice_id = None  # Track if we need to clean up
     
@@ -774,6 +774,14 @@ def process_speech_fast():
                     print(f"DEBUG: Cleaned up temp file: {temp_audio_path}")
                 except Exception as e:
                     print(f"WARNING: Could not delete temp file: {e}")
+            
+            # IMMEDIATELY delete the cloned voice after use
+            if cloned_voice_id:
+                try:
+                    speech_processor.delete_voice(cloned_voice_id)
+                    print(f"DEBUG: Immediately deleted temporary voice: {cloned_voice_id}")
+                except Exception as e:
+                    print(f"WARNING: Could not delete temporary voice: {e}")
                     
     except Exception as e:
         error_msg = str(e)
@@ -914,9 +922,6 @@ def delete_voice(voice_id):
             return jsonify({"success": False, "error": "Failed to delete voice"}), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-    
-    # ADD THIS SIMPLE DEBUG ENDPOINT TO YOUR app.py FILE
-# Put it anywhere after your other routes
 
 @app.route('/api/debug-voice-clone', methods=['POST'])
 def debug_voice_clone():
@@ -1038,6 +1043,43 @@ def quick_test():
     except Exception as e:
         return jsonify({"error": str(e)})
 
+@app.route('/api/cleanup-voices', methods=['POST'])
+def cleanup_voices():
+    """Delete all custom voices to free up slots"""
+    try:
+        # Get all voices
+        response = requests.get(
+            f"{speech_processor.elevenlabs_base_url}/voices",
+            headers={"xi-api-key": ELEVENLABS_API_KEY}
+        )
+        
+        if response.status_code != 200:
+            return jsonify({"error": "Failed to get voices"}), 400
+            
+        voices = response.json().get("voices", [])
+        deleted = []
+        
+        for voice in voices:
+            # Only delete custom voices (not built-in ones)
+            if voice.get("category") == "cloned":
+                try:
+                    delete_response = requests.delete(
+                        f"{speech_processor.elevenlabs_base_url}/voices/{voice['voice_id']}",
+                        headers={"xi-api-key": ELEVENLABS_API_KEY}
+                    )
+                    if delete_response.status_code in [200, 422]:
+                        deleted.append(voice["name"])
+                except:
+                    pass
+        
+        return jsonify({
+            "success": True,
+            "deleted_voices": deleted,
+            "message": f"Deleted {len(deleted)} custom voices"
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
