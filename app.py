@@ -492,6 +492,32 @@ class StrokeOptimizedSpeechProcessor:
             print(f"STROKE ERROR: Audio assessment failed: {e}")
             return False, f"Audio assessment failed: {e}"
     
+    def is_repetitive_text(self, text):
+        """Check if text contains repetitive patterns (transcription error)"""
+        try:
+            words = text.split()
+            if len(words) < 3:
+                return False
+            
+            # Check for same word repeated many times
+            word_counts = {}
+            for word in words:
+                word_counts[word] = word_counts.get(word, 0) + 1
+            
+            # If any word appears more than 60% of total words, it's likely repetitive
+            max_count = max(word_counts.values()) if word_counts else 0
+            if len(words) > 5 and max_count > len(words) * 0.6:
+                return True
+            
+            # Check for repetitive character patterns
+            if len(set(text.replace(' ', ''))) <= 3 and len(text) > 15:
+                return True
+                
+            return False
+            
+        except Exception:
+            return False
+    
     def detect_language(self, text: str) -> str:
         """Detect the language of the input text"""
         try:
@@ -500,126 +526,137 @@ class StrokeOptimizedSpeechProcessor:
             
             # Check for common language patterns
             if re.search(r'[අ-ෆ]', text):  # Sinhala
-                return "Sinhala"
+                return "si"
             elif re.search(r'[ग-ॿ]', text):  # Nepali (Devanagari script)
                 # Try to distinguish Nepali from Hindi by common words
                 if any(word in text for word in ['छ', 'छु', 'छन्', 'हुन्छ', 'गर्छ', 'भन्छ', 'आउँछ']):
-                    return "Nepali"
+                    return "ne"
                 elif any(word in text for word in ['है', 'हैं', 'करता', 'करते', 'होता', 'होते']):
-                    return "Hindi"
+                    return "hi"
                 else:
-                    return "Nepali/Hindi"  # Could be either
+                    return "ne"  # Default to Nepali for mixed Devanagari
             elif re.search(r'[अ-ॿ]', text):  # Hindi/Devanagari (broader range)
-                return "Hindi"
+                return "hi"
             elif re.search(r'[ก-๛]', text):  # Thai
-                return "Thai"
+                return "th"
             elif re.search(r'[ა-ჿ]', text):  # Georgian
-                return "Georgian"
+                return "ka"
             elif re.search(r'[አ-ፚ]', text):  # Amharic
-                return "Amharic"
+                return "am"
             elif re.search(r'[ا-ي]', text):  # Arabic
-                return "Arabic"
+                return "ar"
             elif re.search(r'[一-龯]', text):  # Chinese
-                return "Chinese"
+                return "zh"
             elif re.search(r'[ひらがなカタカナ]|[一-龯]', text):  # Japanese
-                return "Japanese"
+                return "ja"
             elif re.search(r'[가-힣]', text):  # Korean
-                return "Korean"
+                return "ko"
             elif re.search(r'[а-я]', text, re.IGNORECASE):  # Russian/Cyrillic
-                return "Russian"
+                return "ru"
             elif re.search(r'[α-ω]', text, re.IGNORECASE):  # Greek
-                return "Greek"
+                return "el"
             elif re.search(r'[а-щъьюя]', text, re.IGNORECASE):  # Bulgarian
-                return "Bulgarian"
+                return "bg"
             elif re.search(r'[ć-ž]', text, re.IGNORECASE):  # Croatian/Serbian
-                return "Croatian"
+                return "hr"
             elif re.search(r'[à-ÿ]', text, re.IGNORECASE):  # French/Spanish/etc
                 # Try to distinguish between Romance languages
                 if any(word in text.lower() for word in ['que', 'de', 'la', 'el', 'en', 'es', 'para']):
-                    return "Spanish"
+                    return "es"
                 elif any(word in text.lower() for word in ['que', 'de', 'le', 'la', 'et', 'en', 'pour']):
-                    return "French"
+                    return "fr"
                 elif any(word in text.lower() for word in ['che', 'di', 'la', 'il', 'e', 'in', 'per']):
-                    return "Italian"
+                    return "it"
                 else:
-                    return "Romance Language"
+                    return "es"  # Default to Spanish
             elif re.search(r'[a-zA-Z]', text):  # English or other Latin script
-                return "English"
+                return "en"
             else:
-                return "Unknown"
+                return "en"  # Default to English for unknown
                 
         except Exception as e:
             print(f"Language detection failed: {e}")
-            return "Unknown"
+            return "en"
 
     def enhance_text_for_stroke_patients(self, text: str) -> str:
         """Enhanced text processing specifically for stroke speech patterns - MULTILINGUAL"""
         try:
-            # First detect the language
+            # Check for repetitive/garbled text first
+            if self.is_repetitive_text(text):
+                print("STROKE WARNING: Detected repetitive text (transcription error), trying to extract meaningful part")
+                # Extract the first few unique words instead of returning the whole repetitive mess
+                words = text.split()
+                seen_words = []
+                for word in words:
+                    if word not in seen_words:
+                        seen_words.append(word)
+                    if len(seen_words) >= 10:  # Take first 10 unique words max
+                        break
+                if len(seen_words) >= 3:
+                    text = " ".join(seen_words)
+                    print(f"STROKE DEBUG: Extracted meaningful text: '{text}'")
+                else:
+                    print("STROKE WARNING: Too few meaningful words, returning original")
+                    return text
+            
+            # Detect language
             detected_language = self.detect_language(text)
             print(f"STROKE DEBUG: Detected language: {detected_language}")
             
-            # Check if the text looks like garbled/repeated characters (common transcription error)
-            if len(set(text.replace(' ', ''))) <= 3 and len(text) > 10:
-                print("STROKE WARNING: Text appears to be garbled transcription, returning as-is")
-                return text
-            
             # SAFETY CHECK: If text is clearly English, force English processing
-            english_words = ['the', 'and', 'is', 'to', 'of', 'a', 'in', 'that', 'have', 'for', 'not', 'with', 'he', 'as', 'you', 'do', 'at', 'this', 'but', 'his', 'by', 'from', 'they', 'we', 'say', 'her', 'she', 'or', 'an', 'will', 'my', 'one', 'all', 'would', 'there', 'their', 'what', 'so', 'up', 'out', 'if', 'about', 'who', 'get', 'which', 'go', 'me', 'when', 'make', 'can', 'like', 'time', 'no', 'just', 'him', 'know', 'take', 'people', 'into', 'year', 'your', 'good', 'some', 'could', 'them', 'see', 'other', 'than', 'then', 'now', 'look', 'only', 'come', 'its', 'over', 'think', 'also', 'back', 'after', 'use', 'two', 'how', 'our', 'work', 'first', 'well', 'way', 'even', 'new', 'want', 'because', 'any', 'these', 'give', 'day', 'most', 'us', 'hello', 'tried', 'called', 'speech', 'works', 'thing', 'stroke', 'fix', 'slurred']
+            english_words = ['the', 'and', 'is', 'to', 'of', 'a', 'in', 'that', 'have', 'for', 'not', 'with', 'he', 'as', 'you', 'do', 'at', 'this', 'but', 'his', 'by', 'from', 'they', 'we', 'say', 'her', 'she', 'or', 'an', 'will', 'my', 'one', 'all', 'would', 'there', 'their', 'what', 'so', 'up', 'out', 'if', 'about', 'who', 'get', 'which', 'go', 'me', 'when', 'make', 'can', 'like', 'time', 'no', 'just', 'him', 'know', 'take', 'people', 'into', 'year', 'your', 'good', 'some', 'could', 'them', 'see', 'other', 'than', 'then', 'now', 'look', 'only', 'come', 'its', 'over', 'think', 'also', 'back', 'after', 'use', 'two', 'how', 'our', 'work', 'first', 'well', 'way', 'even', 'new', 'want', 'because', 'any', 'these', 'give', 'day', 'most', 'us', 'hello', 'tried', 'called', 'speech', 'works', 'thing', 'stroke', 'fix', 'slurred', 'control', 'website', 'trigger']
             
             text_lower = text.lower()
             english_word_count = sum(1 for word in english_words if word in text_lower)
             total_words = len(text.split())
             
             if english_word_count >= 3 or (total_words > 0 and english_word_count / total_words > 0.3):
-                detected_language = "English"
+                detected_language = "en"
                 print(f"STROKE OVERRIDE: Text contains English words, forcing English processing")
             
-            # More conservative approach - only enhance if we're confident about the language
-            if detected_language == "English":
-                system_prompt = "You are helping a stroke patient communicate more clearly in English. ONLY fix unclear or garbled words. DO NOT translate to any other language. Keep everything else exactly the same."
-                user_prompt = f"""Fix ONLY unclear or garbled words in this English speech from a stroke patient. Keep the EXACT same meaning, style, and language. DO NOT translate or change the language:
+            # Language-specific enhancement prompts
+            if detected_language == "en":
+                system_prompt = "You are helping a stroke patient communicate more clearly in English. Fix unclear words but keep the same meaning and style. Do not translate or change language."
+                user_prompt = f"""Fix unclear or mispronounced words in this English text from a stroke patient. Keep the same meaning and natural style. Only output the corrected text, nothing else.
 
-Original English: "{text}"
+Text: {text}
 
-Fixed English (same language):"""
+Corrected:"""
                 
-            elif detected_language == "Sinhala":
-                system_prompt = "You are helping a stroke patient communicate more clearly in Sinhala. Fix unclear words while keeping the same meaning and natural style. DO NOT translate to any other language."
-                user_prompt = f"""සිංහල භාෂාවෙන් කතා කරන ආ​ඝාත රෝගියෙකුට පැහැදිලිව සන්නිවේදනය කිරීමට උදව් කරන්න. අර්ථය සහ ස්වාභාවික විලාසය එසේම තබා ගෙන අපැහැදිලි වචන නිවැරදි කරන්න. වෙනත් භාෂාවකට පරිවර්තනය නොකරන්න:
+            elif detected_language == "ne":
+                system_prompt = "तपाईं स्ट्रोकका बिरामीलाई नेपालीमा स्पष्ट रूपमा कुरा गर्न मद्दत गर्दै हुनुहुन्छ। अस्पष्ट शब्दहरू मात्र सुधार्नुहोस्।"
+                user_prompt = f"""नेपाली भाषामा स्ट्रोक बिरामीको यो वाक्यमा अस्पष्ट शब्दहरू मात्र सुधार्नुहोस्। अर्थ र शैली उस्तै राख्नुहोस्। केवल सुधारिएको पाठ मात्र दिनुहोस्।
 
-මුල් කථනය: "{text}"
+पाठ: {text}
 
-නිවැරදි කළ සිංහල:"""
+सुधारिएको:"""
 
-            elif detected_language == "Nepali" or detected_language == "Nepali/Hindi":
-                system_prompt = "You are helping a stroke patient communicate more clearly in Nepali. Fix unclear words while keeping the same meaning and natural style. DO NOT translate to any other language."
-                user_prompt = f"""नेपाली भाषामा स्ट्रोकका बिरामीलाई स्पष्ट रूपमा सञ्चार गर्न मद्दत गर्नुहोस्। अर्थ र प्राकृतिक शैली उस्तै राखेर अस्पष्ट शब्दहरू सुधार गर्नुहोस्। अन्य भाषामा अनुवाद नगर्नुहोस्:
+            elif detected_language == "hi":
+                system_prompt = "आप स्ट्रोक के मरीज़ को हिंदी में स्पष्ट बोलने में मदद कर रहे हैं। केवल अस्पष्ट शब्दों को ठीक करें।"
+                user_prompt = f"""स्ट्रोक मरीज़ के इस हिंदी वाक्य में केवल अस्पष्ट शब्दों को ठीक करें। अर्थ और शैली वही रखें। केवल सुधारा हुआ टेक्स्ट दें।
 
-मूल भाषण: "{text}"
+टेक्स्ट: {text}
 
-सुधारिएको नेपाली:"""
+सुधारा गया:"""
 
-            elif detected_language in ["Hindi", "Devanagari"]:
-                system_prompt = "You are helping a stroke patient communicate more clearly in Hindi. Fix unclear words while keeping the same meaning and natural style. DO NOT translate to any other language."
-                user_prompt = f"""स्ट्रोक के मरीज़ को हिंदी में स्पष्ट रूप से संवाद करने में मदद करें। अर्थ और प्राकृतिक शैली को बनाए रखते हुए अस्पष्ट शब्दों को ठीक करें। किसी अन्य भाषा में अनुवाद न करें:
+            elif detected_language == "si":
+                system_prompt = "ඔබ ආඝාත රෝගියෙකුට සිංහලෙන් පැහැදිලිව කතා කිරීමට උදව් කරයි. අපැහැදිලි වචන පමණක් නිවැරදි කරන්න."
+                user_prompt = f"""ආඝාත රෝගියෙකුගේ මෙම සිංහල වාක්‍යයේ අපැහැදිලි වචන පමණක් නිවැරදි කරන්න. අර්ථය සහ විලාසය එසේම තබන්න.
 
-मूल भाषण: "{text}"
+පාඨය: {text}
 
-सुधारा गया हिंदी:"""
+නිවැරදි කළ:"""
 
             else:
-                # For any other language or uncertain cases, be VERY conservative
-                print(f"STROKE WARNING: Uncertain language detection ({detected_language}), minimal processing")
-                
-                system_prompt = "You are helping a stroke patient. ONLY fix obvious transcription errors like repeated characters or garbled text. DO NOT translate to any other language. DO NOT change the meaning or style. If the text seems fine, return it unchanged."
-                user_prompt = f"""ONLY fix obvious transcription errors in this text. DO NOT translate to any other language. DO NOT change the meaning. If it looks fine, return it exactly as is:
+                # Conservative approach for other/mixed languages
+                system_prompt = "Fix only obvious transcription errors. Do not translate. Keep the same language and meaning."
+                user_prompt = f"""Fix only obvious transcription errors in this text. Do not translate to another language. Keep original meaning and language.
 
-Original: "{text}"
+Text: {text}
 
-Fixed (same language):"""
+Fixed:"""
             
-            # Make the API call with extra safety
+            # Make the API call
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
@@ -627,7 +664,7 @@ Fixed (same language):"""
                     {"role": "user", "content": user_prompt}
                 ],
                 max_tokens=150,
-                temperature=0.0,  # Zero temperature for more predictable results
+                temperature=0.0,  # Zero temperature for consistency
                 top_p=1,
                 frequency_penalty=0,
                 presence_penalty=0
@@ -635,38 +672,44 @@ Fixed (same language):"""
             
             enhanced_text = response.choices[0].message.content.strip()
             
-            # Remove any quotes that AI might add
-            if enhanced_text.startswith('"') and enhanced_text.endswith('"'):
-                enhanced_text = enhanced_text[1:-1]
-            if enhanced_text.startswith("'") and enhanced_text.endswith("'"):
-                enhanced_text = enhanced_text[1:-1]
+            # Clean up response - remove quotes and unwanted prefixes
+            prefixes_to_remove = [
+                "मूल भाषा:", "मुल भाषा:", "Original:", "Fixed:", "Corrected:", "सुधारिएको:", "सुधारा गया:", "निवारदि कळ:", 
+                "Enhanced:", "Clear:", "सुधारिएको पाठ:", "सुधारा हुआ:", "नेपाली:", "हिंदी:", "सिंहला:", 
+                "English:", "Text:", "पाठ:", "टेक्स्ट:", "Enhanced version:", "मूल भाषा", 
+                '"', "'", ":", "।", ".", "Updated:", "Result:"
+            ]
             
-            # STRICT VALIDATION - check if AI translated
-            if detected_language == "English":
-                # Check if response is still in English
+            for prefix in prefixes_to_remove:
+                if enhanced_text.startswith(prefix):
+                    enhanced_text = enhanced_text[len(prefix):].strip()
+            
+            # Remove quotes if they wrap the whole text
+            if (enhanced_text.startswith('"') and enhanced_text.endswith('"')) or (enhanced_text.startswith("'") and enhanced_text.endswith("'")):
+                enhanced_text = enhanced_text[1:-1].strip()
+            
+            # Final validation - reject if too different or translated
+            if detected_language == "en":
                 english_response_count = sum(1 for word in english_words if word.lower() in enhanced_text.lower())
                 if english_response_count < 2 and len(enhanced_text.split()) > 3:
-                    print(f"STROKE ERROR: AI translated English to another language! Returning original.")
+                    print(f"STROKE ERROR: AI may have translated English, returning original")
                     return text
             
-            # Check for dramatic length changes (sign of translation)
-            if len(enhanced_text) > len(text) * 2 or len(enhanced_text) < len(text) * 0.4:
-                print(f"STROKE WARNING: Enhanced text length very different ({len(text)} -> {len(enhanced_text)}), returning original")
+            # Check for dramatic length changes (translation indicator)
+            if len(enhanced_text) > len(text) * 1.8 or len(enhanced_text) < len(text) * 0.5:
+                print(f"STROKE WARNING: Length change too dramatic, returning original")
                 return text
             
-            # Check if completely different character sets (translation)
-            original_chars = set(text.replace(' ', '').lower())
-            enhanced_chars = set(enhanced_text.replace(' ', '').lower())
-            
-            if len(original_chars & enhanced_chars) == 0 and len(original_chars) > 5:
-                print(f"STROKE ERROR: AI changed character set completely (translation), returning original")
+            # If empty or just punctuation, return original
+            if len(enhanced_text.strip()) < 3:
+                print(f"STROKE WARNING: Enhancement too short, returning original")
                 return text
                 
-            print(f"STROKE SUCCESS ({detected_language}): Enhanced '{text}' to '{enhanced_text}'")
+            print(f"STROKE SUCCESS ({detected_language}): '{text}' → '{enhanced_text}'")
             return enhanced_text
             
         except Exception as e:
-            print(f"STROKE ERROR: Multilingual text enhancement failed: {str(e)}")
+            print(f"STROKE ERROR: Text enhancement failed: {str(e)}")
             return text
     
     def clone_voice_with_enhancement(self, name: str, audio_file_path: str) -> str:
