@@ -355,7 +355,7 @@ def search():
         return jsonify({"error": str(e)}), 500
 
 # =============================================================================
-# SPEECH FUNCTIONALITY - ALL REAL APIs
+# IMPROVED SPEECH FUNCTIONALITY - ALL REAL APIs WITH FIXED VOICE CLONING
 # =============================================================================
 
 class OptimizedSpeechProcessor:
@@ -387,6 +387,50 @@ class OptimizedSpeechProcessor:
                         headers={"xi-api-key": ELEVENLABS_API_KEY}, timeout=5)
         except:
             pass
+    
+    def validate_audio_for_cloning(self, file_path):
+        """Validate audio file is suitable for voice cloning"""
+        try:
+            import wave
+            import audioop
+            
+            file_size = os.path.getsize(file_path)
+            print(f"DEBUG: Audio file size: {file_size} bytes")
+            
+            # Basic file size checks
+            if file_size == 0:
+                raise Exception("Audio file is empty")
+            if file_size > 25 * 1024 * 1024:  # 25MB limit
+                raise Exception("Audio file too large (max 25MB)")
+            if file_size < 10000:  # Less than 10KB is probably too short
+                raise Exception("Audio file too small - need at least 10-30 seconds of clear speech")
+            
+            # Try to read as WAV and get duration
+            try:
+                with wave.open(file_path, 'rb') as wav_file:
+                    frames = wav_file.getnframes()
+                    sample_rate = wav_file.getframerate()
+                    duration = frames / float(sample_rate)
+                    channels = wav_file.getnchannels()
+                    
+                    print(f"DEBUG: Audio duration: {duration:.2f}s, channels: {channels}, sample_rate: {sample_rate}")
+                    
+                    if duration < 5.0:  # Less than 5 seconds
+                        raise Exception(f"Audio too short ({duration:.1f}s) - need at least 10-30 seconds for good cloning")
+                    
+                    if duration > 300:  # More than 5 minutes
+                        print(f"WARNING: Audio very long ({duration:.1f}s) - this may take time to process")
+                    
+                    return True, duration
+                    
+            except wave.Error:
+                # If not a valid WAV, still try to process
+                print("WARNING: Could not parse as WAV, but will attempt cloning anyway")
+                return True, None
+                
+        except Exception as e:
+            print(f"Audio validation failed: {e}")
+            raise Exception(f"Audio validation failed: {e}")
         
     def transcribe_audio_fast(self, audio_file_path: str) -> str:
         """REAL OpenAI Whisper transcription with auto language detection"""
@@ -487,44 +531,73 @@ Fixed (same language):"""
             raise Exception(f"Speech generation failed: {str(e)}")
     
     def clone_voice(self, name: str, audio_file_path: str) -> str:
-        """REAL ElevenLabs voice cloning"""
+        """IMPROVED voice cloning with better error handling"""
         try:
-            # DEBUG: Check file before cloning
-            file_size = os.path.getsize(audio_file_path)
-            print(f"DEBUG: Cloning file size: {file_size} bytes")
+            # Validate audio first
+            self.validate_audio_for_cloning(audio_file_path)
+            
+            print(f"DEBUG: Starting voice clone for '{name}'")
             print(f"DEBUG: File path: {audio_file_path}")
-
+            
             url = f"{self.elevenlabs_base_url}/voices/add"
+            headers = {"xi-api-key": ELEVENLABS_API_KEY}
             
-            headers = {
-                "xi-api-key": ELEVENLABS_API_KEY
-            }
-            
+            # Prepare the request
             with open(audio_file_path, "rb") as audio_file:
                 files = {
-                    "files": (os.path.basename(audio_file_path), audio_file, "audio/wav")
+                    "files": (f"{name}_voice.wav", audio_file, "audio/wav")
                 }
                 data = {
-                    "name": name,
-                    "description": f"Professional clone for {name} - preserves emotions and speaking style",
+                    "name": f"{name}_{int(time.time())}",  # Make name unique
+                    "description": f"Auto-cloned voice for {name}",
                     "remove_background_noise": "true",
+                    "enhance_audio_quality": "true"  # Try to improve quality
                 }
                 
-                response = requests.post(url, headers=headers, files=files, data=data, timeout=60)
+                print(f"DEBUG: Sending clone request to ElevenLabs...")
+                response = requests.post(url, headers=headers, files=files, data=data, timeout=120)
+            
+            print(f"DEBUG: Clone response status: {response.status_code}")
+            print(f"DEBUG: Clone response headers: {dict(response.headers)}")
             
             if response.status_code == 200:
                 result = response.json()
-                print(f"DEBUG: Full cloning response: {result}")
+                print(f"DEBUG: Clone success response: {result}")
                 voice_id = result.get("voice_id")
                 if voice_id:
-                    print(f"Voice cloned successfully: {voice_id}")
+                    print(f"SUCCESS: Voice cloned with ID: {voice_id}")
                     return voice_id
                 else:
-                    raise Exception("No voice_id in response")
-            else:
-                print(f"Voice cloning failed: {response.status_code} - {response.text}")
-                raise Exception(f"ElevenLabs clone error: {response.status_code} - {response.text}")
+                    raise Exception("No voice_id in successful response")
+                    
+            elif response.status_code == 422:
+                # Validation error - get details
+                try:
+                    error_detail = response.json()
+                    print(f"DEBUG: Validation error details: {error_detail}")
+                    error_msg = error_detail.get("detail", {})
+                    if isinstance(error_msg, list) and len(error_msg) > 0:
+                        specific_error = error_msg[0].get("msg", "Audio quality insufficient")
+                        raise Exception(f"Audio not suitable for cloning: {specific_error}")
+                    else:
+                        raise Exception("Audio quality insufficient for cloning - try recording 10-30 seconds of clear speech")
+                except json.JSONDecodeError:
+                    raise Exception("Audio validation failed - may need longer or clearer recording")
+                    
+            elif response.status_code == 401:
+                raise Exception("ElevenLabs API key invalid or expired")
                 
+            elif response.status_code == 429:
+                raise Exception("ElevenLabs rate limit exceeded - please wait and try again")
+                
+            else:
+                print(f"DEBUG: Unexpected error response: {response.text}")
+                raise Exception(f"ElevenLabs API error {response.status_code}: {response.text[:200]}")
+                
+        except requests.exceptions.Timeout:
+            raise Exception("Voice cloning timed out - audio may be too long or server busy")
+        except requests.exceptions.ConnectionError:
+            raise Exception("Cannot connect to ElevenLabs - check internet connection")
         except Exception as e:
             print(f"Voice cloning error: {str(e)}")
             raise Exception(f"Voice cloning failed: {str(e)}")
@@ -594,8 +667,9 @@ def create_voice_profile():
 
 @app.route('/api/process-speech-fast', methods=['POST'])
 def process_speech_fast():
-    """REAL speech processing with all real APIs"""
+    """IMPROVED speech processing with better auto-cloning"""
     start_time = time.time()
+    cloned_voice_id = None  # Track if we need to clean up
     
     try:
         # Check if file was uploaded
@@ -609,42 +683,68 @@ def process_speech_fast():
         if audio_file.filename == '':
             return jsonify({"error": "No file selected"}), 400
         
-        # Save uploaded audio
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
-            audio_file.save(temp_file.name)
-            temp_audio_path = temp_file.name
-        
+        # Save uploaded audio with better naming
+        temp_audio_path = None
         try:
+            # Create temp file with .wav extension
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav", prefix="user_voice_") as temp_file:
+                audio_file.save(temp_file.name)
+                temp_audio_path = temp_file.name
+                
+            print(f"DEBUG: Saved audio to: {temp_audio_path}")
+            print(f"DEBUG: File size: {os.path.getsize(temp_audio_path)} bytes")
+            
             # Step 1: REAL transcription
             transcribe_start = time.time()
             original_text = speech_processor.transcribe_audio_fast(temp_audio_path)
             transcribe_time = time.time() - transcribe_start
             
-            # Step 2: REAL auto voice cloning if needed
+            print(f"DEBUG: Transcribed: '{original_text}' in {transcribe_time:.2f}s")
+            
+            # Step 2: Auto voice cloning if requested and no voice_id provided
             clone_time = 0
             auto_cloned = False
+            clone_error = None
+            
             if not voice_id and auto_clone:
                 try:
                     clone_start = time.time()
-                    print("Auto-cloning voice from user's speech...")
-                    voice_id = speech_processor.clone_voice("AutoClone", temp_audio_path)
+                    print("DEBUG: Starting auto-clone process...")
+                    
+                    # Try to clone the voice
+                    cloned_voice_id = speech_processor.clone_voice("AutoClone", temp_audio_path)
+                    voice_id = cloned_voice_id
+                    
                     clone_time = time.time() - clone_start
                     auto_cloned = True
-                    print(f"Auto-cloned voice: {voice_id} in {clone_time:.2f}s")
+                    print(f"SUCCESS: Auto-cloned voice {voice_id} in {clone_time:.2f}s")
+                    
                 except Exception as e:
-                    print(f"Auto-cloning failed, using default voice: {str(e)}")
-                    voice_id = None
+                    clone_error = str(e)
+                    print(f"WARNING: Auto-cloning failed: {clone_error}")
+                    voice_id = None  # Use default voice
                     auto_cloned = False
             
-            # Step 3: REAL text enhancement and speech generation
+            # Step 3: Text enhancement and speech generation
             process_start = time.time()
             enhanced_text = speech_processor.enhance_text_fast(original_text)
-            audio_data = speech_processor.generate_speech_fast(enhanced_text, voice_id)
-            process_time = time.time() - process_start
             
+            # Generate speech with cloned or default voice
+            try:
+                audio_data = speech_processor.generate_speech_fast(enhanced_text, voice_id)
+                speech_generation_success = True
+            except Exception as e:
+                print(f"WARNING: Speech generation failed with voice {voice_id}: {e}")
+                # Fall back to default voice
+                audio_data = speech_processor.generate_speech_fast(enhanced_text, None)
+                speech_generation_success = False
+                if auto_cloned:
+                    clone_error = f"Cloning succeeded but speech generation failed: {e}"
+            
+            process_time = time.time() - process_start
             total_time = time.time() - start_time
             
-            return jsonify({
+            response_data = {
                 "success": True,
                 "original_text": original_text,
                 "enhanced_text": enhanced_text,
@@ -657,18 +757,80 @@ def process_speech_fast():
                 },
                 "voice_used": voice_id or "default",
                 "auto_cloned": auto_cloned,
+                "speech_generation_success": speech_generation_success,
                 "speed_optimized": True
-            })
+            }
+            
+            # Add clone error info if there was one
+            if clone_error:
+                response_data["clone_warning"] = clone_error
+                
+            return jsonify(response_data)
             
         finally:
-            # Clean up
+            # Clean up temp file
+            if temp_audio_path and os.path.exists(temp_audio_path):
+                try:
+                    os.unlink(temp_audio_path)
+                    print(f"DEBUG: Cleaned up temp file: {temp_audio_path}")
+                except Exception as e:
+                    print(f"WARNING: Could not delete temp file: {e}")
+                    
+    except Exception as e:
+        error_msg = str(e)
+        print(f"ERROR: process_speech_fast failed: {error_msg}")
+        
+        # Clean up any cloned voice if there was an error
+        if cloned_voice_id:
             try:
-                os.unlink(temp_audio_path)
+                speech_processor.delete_voice(cloned_voice_id)
+                print(f"DEBUG: Cleaned up failed voice clone: {cloned_voice_id}")
             except:
                 pass
                 
+        return jsonify({
+            "error": error_msg,
+            "success": False,
+            "debug_info": {
+                "auto_clone_attempted": auto_clone,
+                "voice_id_provided": bool(voice_id)
+            }
+        }), 500
+
+@app.route('/api/test-voice-clone', methods=['POST'])
+def test_voice_clone():
+    """Test voice cloning functionality separately"""
+    try:
+        if 'audio' not in request.files:
+            return jsonify({"error": "No audio file provided"}), 400
+        
+        audio_file = request.files['audio']
+        test_name = request.form.get('name', 'TestVoice')
+        
+        # Save temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+            audio_file.save(temp_file.name)
+            temp_path = temp_file.name
+        
+        try:
+            # Test validation
+            is_valid, duration = speech_processor.validate_audio_for_cloning(temp_path)
+            
+            # Test cloning
+            voice_id = speech_processor.clone_voice(test_name, temp_path)
+            
+            return jsonify({
+                "success": True,
+                "voice_id": voice_id,
+                "audio_duration": duration,
+                "message": "Voice cloning test successful!"
+            })
+            
+        finally:
+            os.unlink(temp_path)
+            
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "success": False}), 500
 
 @app.route('/api/voices', methods=['GET'])
 def get_voices():
